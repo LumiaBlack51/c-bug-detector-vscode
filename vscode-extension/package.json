@@ -2,11 +2,11 @@
   "name": "c-bug-detector",
   "displayName": "C语言Bug检测器",
   "description": "专为初学者设计的C语言bug检测器，采用启发式与正则表达式方法",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "publisher": "c-bug-detector",
   "repository": {
     "type": "git",
-    "url": "https://github.com/your-username/c-bug-detector.git"
+    "url": "https://github.com/LumiaBlack51/c-bug-detector-vscode.git"
   },
   "engines": {
     "vscode": "^1.74.0"
