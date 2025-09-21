@@ -11,18 +11,18 @@ function copyBackendFiles() {
         fs.mkdirSync(targetDir, { recursive: true });
     }
     
-    // 需要复制的文件列表
+    // 需要复制的文件列表（从core目录）
     const filesToCopy = [
-        'main.py',
-        'requirements.txt',
-        'modules/memory_safety.py',
-        'modules/variable_state.py',
-        'modules/standard_library.py',
-        'modules/numeric_control_flow.py',
-        'modules/__init__.py',
-        'utils/error_reporter.py',
-        'utils/code_parser.py',
-        'utils/__init__.py'
+        'core/main.py',
+        'core/requirements.txt',
+        'core/modules/memory_safety.py',
+        'core/modules/variable_state.py',
+        'core/modules/standard_library.py',
+        'core/modules/numeric_control_flow.py',
+        'core/modules/__init__.py',
+        'core/utils/error_reporter.py',
+        'core/utils/code_parser.py',
+        'core/utils/__init__.py'
     ];
     
     // 复制文件

@@ -1,30 +1,17 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
 import * as fs from 'fs';
-import { spawn } from 'child_process';
+import { CDetector, BugReport, AnalysisResult } from './cDetector';
 
-export interface BugReport {
-    line_number: number;
-    error_type: string;
-    severity: string;
-    message: string;
-    suggestion: string;
-    code_snippet: string;
-    module_name: string;
-}
-
-export interface AnalysisResult {
-    file_path: string;
-    reports: BugReport[];
-    success: boolean;
-    error?: string;
-}
+export { BugReport, AnalysisResult };
 
 export class BugDetectorBackend {
     private config: vscode.WorkspaceConfiguration;
+    private detector: CDetector;
 
     constructor() {
         this.config = vscode.workspace.getConfiguration('c-bug-detector');
+        this.detector = new CDetector();
     }
 
     public updateConfiguration(): void {
@@ -33,131 +20,101 @@ export class BugDetectorBackend {
 
     public async analyzeFile(filePath: string): Promise<AnalysisResult> {
         try {
-            const pythonPath = this.config.get<string>('pythonPath', 'python');
-            const backendPath = this.config.get<string>('backendPath', '../main.py');
-            
-            // 构建完整的后端路径
-            let fullBackendPath: string;
-            
-            // 如果是相对路径，尝试多个可能的位置
-            if (path.isAbsolute(backendPath)) {
-                fullBackendPath = backendPath;
-            } else {
-                // 尝试多个可能的后端路径
-                const possiblePaths = [
-                    // 插件内置的后端文件
-                    path.resolve(__dirname, '../backend/main.py'),
-                    // 用户配置的相对路径
-                    path.resolve(__dirname, backendPath),
-                    // 开发环境的路径
-                    path.resolve(__dirname, '../../main.py'),
-                    path.resolve(__dirname, '../../../main.py'),
-                    // 工作区路径
-                    path.resolve(process.cwd(), 'main.py'),
-                    path.resolve(process.cwd(), '../main.py'),
-                    path.resolve(process.cwd(), '../../main.py'),
-                ];
-                
-                // 查找存在的路径
-                fullBackendPath = possiblePaths.find(p => fs.existsSync(p)) || possiblePaths[0];
-            }
-            
-            if (!fs.existsSync(fullBackendPath)) {
-                // 提供更详细的错误信息
-                const possiblePaths = [
-                    path.resolve(__dirname, '../main.py'),
-                    path.resolve(__dirname, '../../main.py'),
-                    path.resolve(__dirname, '../../../main.py'),
-                    path.resolve(process.cwd(), 'main.py'),
-                ];
-                
-                const errorMsg = `后端检测器不存在: ${fullBackendPath}\n\n` +
-                    `请检查以下路径之一是否存在main.py文件:\n` +
-                    possiblePaths.map(p => `  - ${p}`).join('\n') + '\n\n' +
-                    `或者在VS Code设置中配置正确的backendPath路径。`;
-                
-                throw new Error(errorMsg);
+            // 检查文件是否存在
+            if (!fs.existsSync(filePath)) {
+                return {
+                    file_path: filePath,
+                    reports: [],
+                    success: false,
+                    error: `文件不存在: ${filePath}`
+                };
             }
 
-            // 构建命令参数
-            const args = [
-                fullBackendPath,
-                filePath,
-                '-f', 'json'
-            ];
-
-            // 添加模块启用/禁用参数
-            const enabledModules = this.getEnabledModules();
-            if (enabledModules.length > 0) {
-                args.push('--enable', ...enabledModules);
+            // 检查文件扩展名
+            const ext = path.extname(filePath).toLowerCase();
+            if (ext !== '.c' && ext !== '.h') {
+                return {
+                    file_path: filePath,
+                    reports: [],
+                    success: false,
+                    error: `不支持的文件类型: ${ext}`
+                };
             }
 
-            return new Promise<AnalysisResult>((resolve, reject) => {
-                const process = spawn(pythonPath, args, {
-                    cwd: path.dirname(fullBackendPath)
-                });
-
-                let stdout = '';
-                let stderr = '';
-
-                process.stdout.on('data', (data) => {
-                    stdout += data.toString();
-                });
-
-                process.stderr.on('data', (data) => {
-                    stderr += data.toString();
-                });
-
-                process.on('close', (code) => {
-                    if (code === 0) {
-                        try {
-                            const reports: BugReport[] = JSON.parse(stdout);
-                            resolve({
-                                file_path: filePath,
-                                reports: reports,
-                                success: true
-                            });
-                        } catch (parseError) {
-                            reject(new Error(`解析结果失败: ${parseError}`));
-                        }
-                    } else {
-                        reject(new Error(`检测器执行失败 (代码: ${code}): ${stderr}`));
-                    }
-                });
-
-                process.on('error', (error) => {
-                    reject(new Error(`启动检测器失败: ${error.message}`));
-                });
-            });
-
+            // 使用TypeScript检测器
+            const result = this.detector.analyzeFile(filePath);
+            return result;
         } catch (error) {
             return {
                 file_path: filePath,
                 reports: [],
                 success: false,
-                error: error instanceof Error ? error.message : String(error)
+                error: `检测器执行失败: ${error}`
             };
         }
     }
 
     public async analyzeWorkspace(): Promise<AnalysisResult[]> {
-        const workspaceFolders = vscode.workspace.workspaceFolders;
-        if (!workspaceFolders) {
-            throw new Error('没有打开的工作区');
-        }
+        try {
+            if (!vscode.workspace.workspaceFolders) {
+                return [{
+                    file_path: 'workspace',
+                    reports: [],
+                    success: false,
+                    error: '没有打开的工作区'
+                }];
+            }
 
-        const results: AnalysisResult[] = [];
-        
-        for (const folder of workspaceFolders) {
-            const cFiles = await this.findCFiles(folder.uri.fsPath);
+            const results: AnalysisResult[] = [];
             
+            for (const folder of vscode.workspace.workspaceFolders) {
+                const folderResults = await this.analyzeDirectory(folder.uri.fsPath);
+                results.push(...folderResults);
+            }
+
+            return results;
+        } catch (error) {
+            return [{
+                file_path: 'workspace',
+                reports: [],
+                success: false,
+                error: `工作区分析失败: ${error}`
+            }];
+        }
+    }
+
+    private async analyzeDirectory(directoryPath: string): Promise<AnalysisResult[]> {
+        try {
+            const results: AnalysisResult[] = [];
+            
+            // 检查目录是否存在
+            if (!fs.existsSync(directoryPath)) {
+                return [{
+                    file_path: directoryPath,
+                    reports: [],
+                    success: false,
+                    error: `目录不存在: ${directoryPath}`
+                }];
+            }
+
+            // 递归查找C文件
+            const cFiles = await this.findCFiles(directoryPath);
+            
+            // 分析每个文件
             for (const filePath of cFiles) {
                 const result = await this.analyzeFile(filePath);
                 results.push(result);
             }
-        }
 
-        return results;
+            return results;
+        } catch (error) {
+            return [{
+                file_path: directoryPath,
+                reports: [],
+                success: false,
+                error: `检测器执行失败: ${error}`
+            }];
+        }
     }
 
     private async findCFiles(rootPath: string): Promise<string[]> {
@@ -175,7 +132,7 @@ export class BugDetectorBackend {
                         if (!['node_modules', '.git', '.vscode', 'out', 'build'].includes(entry.name)) {
                             await findFiles(fullPath);
                         }
-                    } else if (entry.isFile() && entry.name.endsWith('.c')) {
+                    } else if (entry.isFile() && (entry.name.endsWith('.c') || entry.name.endsWith('.h'))) {
                         cFiles.push(fullPath);
                     }
                 }
@@ -186,25 +143,6 @@ export class BugDetectorBackend {
 
         await findFiles(rootPath);
         return cFiles;
-    }
-
-    private getEnabledModules(): string[] {
-        const modules: string[] = [];
-        
-        if (this.config.get<boolean>('enableMemorySafety', true)) {
-            modules.push('memory_safety');
-        }
-        if (this.config.get<boolean>('enableVariableState', true)) {
-            modules.push('variable_state');
-        }
-        if (this.config.get<boolean>('enableStandardLibrary', true)) {
-            modules.push('standard_library');
-        }
-        if (this.config.get<boolean>('enableNumericControlFlow', true)) {
-            modules.push('numeric_control_flow');
-        }
-
-        return modules;
     }
 
     public dispose(): void {
