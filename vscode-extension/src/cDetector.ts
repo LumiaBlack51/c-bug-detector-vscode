@@ -492,17 +492,21 @@ export class CDetector {
                     });
                 }
 
-                // 检测scanf缺少&
+                // 检测scanf缺少&（只对非指针变量）
                 if (!line.includes('&') && line.includes('%')) {
-                    reports.push({
-                        line_number: lineNum,
-                        error_type: 'scanf参数错误',
-                        severity: 'Warning',
-                        message: 'scanf可能缺少&操作符',
-                        suggestion: '检查scanf参数是否需要&操作符',
-                        code_snippet: line.trim(),
-                        module_name: 'standard_library'
-                    });
+                    // 检查是否是字符串输入（不需要&）
+                    const isStringInput = line.includes('"%s"') || line.includes("'%s'");
+                    if (!isStringInput) {
+                        reports.push({
+                            line_number: lineNum,
+                            error_type: 'scanf参数错误',
+                            severity: 'Warning',
+                            message: 'scanf可能缺少&操作符',
+                            suggestion: '检查scanf参数是否需要&操作符',
+                            code_snippet: line.trim(),
+                            module_name: 'standard_library'
+                        });
+                    }
                 }
             }
         }
