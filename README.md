@@ -35,7 +35,14 @@
 
 ## 🚀 快速开始
 
-### 安装
+### VS Code插件安装 (推荐)
+1. 下载最新版本的 `c-bug-detector-*.vsix` 文件
+2. 在VS Code中按 `Ctrl+Shift+P` 打开命令面板
+3. 输入 `Extensions: Install from VSIX...`
+4. 选择下载的VSIX文件
+5. 重启VS Code
+
+### 命令行工具安装
 ```bash
 # 克隆项目
 git clone https://github.com/your-username/c-bug-detector.git
@@ -45,7 +52,13 @@ cd c-bug-detector
 python install.py
 ```
 
-### 基本使用
+### VS Code插件使用
+- **分析当前文件**: 按 `Ctrl+Shift+B` 或使用命令面板 `C Bug Detector: 分析当前C文件`
+- **分析工作区**: 使用命令面板 `C Bug Detector: 分析工作区所有C文件`
+- **查看检测面板**: 使用命令面板 `C Bug Detector: 显示检测面板`
+- **查看结果**: 检测结果会显示在Problems面板和插件侧边栏中
+
+### 命令行工具使用
 ```bash
 # 分析单个文件
 python main.py <source_file.c>
@@ -77,6 +90,16 @@ python demo.py
 │   ├── variable_state.py      # 变量状态监察官
 │   ├── standard_library.py    # 标准库使用助手
 │   └── numeric_control_flow.py # 数值与控制流分析器
+├── vscode-extension/          # VS Code插件
+│   ├── src/                   # 插件源码
+│   │   ├── extension.ts       # 插件主入口
+│   │   ├── backend.ts         # 后端接口
+│   │   ├── resultsProvider.ts # 结果提供者
+│   │   └── detectionPanel.ts  # 检测面板
+│   ├── media/                 # 插件资源
+│   │   └── icon.svg          # 插件图标
+│   ├── package.json          # 插件配置
+│   └── tsconfig.json         # TypeScript配置
 ├── tests/                     # 测试用例
 │   ├── test_memory_safety.c   # 内存安全测试
 │   ├── test_variable_state.c  # 变量状态测试
@@ -86,10 +109,13 @@ python demo.py
 ├── utils/                     # 工具函数
 │   ├── error_reporter.py     # 错误报告器
 │   └── code_parser.py        # 代码解析器
+├── .github/workflows/         # GitHub Actions
+│   └── build-and-release.yml  # 自动构建和发布
 ├── main.py                   # 主程序
 ├── demo.py                   # 演示脚本
 ├── install.py               # 安装脚本
 ├── requirements.txt         # 依赖包
+├── LICENSE                  # 许可证
 └── README.md               # 项目说明
 ```
 

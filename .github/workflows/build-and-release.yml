@@ -1,0 +1,99 @@
+name: Build and Release VS Code Extension
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
+        cache-dependency-path: vscode-extension/package-lock.json
+        
+    - name: Setup Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.9'
+        
+    - name: Install Python dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        
+    - name: Install VS Code Extension dependencies
+      run: |
+        cd vscode-extension
+        npm install
+        
+    - name: Compile VS Code Extension
+      run: |
+        cd vscode-extension
+        npm run compile
+        
+    - name: Install vsce
+      run: npm install -g @vscode/vsce
+      
+    - name: Package VS Code Extension
+      run: |
+        cd vscode-extension
+        vsce package --allow-missing-repository
+        
+    - name: Upload VSIX artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: c-bug-detector-vsix
+        path: vscode-extension/*.vsix
+        
+    - name: Create Release
+      if: startsWith(github.ref, 'refs/tags/')
+      uses: softprops/action-gh-release@v1
+      with:
+        files: vscode-extension/*.vsix
+        generate_release_notes: true
+        body: |
+          ## C语言Bug检测器 VS Code插件 v${{ github.ref_name }}
+          
+          ### 🎯 新功能
+          - 图形化检测界面
+          - 一键检测C文件
+          - Problems面板集成
+          - 可插拔后端架构
+          
+          ### 📦 安装方法
+          1. 下载 `c-bug-detector-${{ github.ref_name }}.vsix` 文件
+          2. 在VS Code中按 `Ctrl+Shift+P` 打开命令面板
+          3. 输入 `Extensions: Install from VSIX...`
+          4. 选择下载的VSIX文件
+          5. 重启VS Code
+          
+          ### 🔧 使用方法
+          - 按 `Ctrl+Shift+B` 分析当前C文件
+          - 使用命令面板 `C Bug Detector: 分析工作区所有C文件`
+          - 在侧边栏查看检测结果
+          
+          ### 📋 检测模块
+          - 🔒 内存安全卫士: 检测内存泄漏、野指针、空指针解引用
+          - 📊 变量状态监察官: 检测变量未初始化即使用和变量作用域问题
+          - 📚 标准库使用助手: 检测缺失头文件、头文件拼写错误，检查常用函数参数
+          - 🔢 数值与控制流分析器: 检测类型溢出和死循环
+          
+          ### 🛠️ 后端要求
+          - Python 3.7+
+          - 安装依赖: `pip install -r requirements.txt`
+          
+          ---
+          
+          **让C语言学习更简单，让bug无处藏身！** 🐛✨
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
