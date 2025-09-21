@@ -17,8 +17,20 @@ export interface AnalysisResult {
     error?: string;
 }
 
+interface VariableState {
+    name: string;
+    type: string; // 'int', 'char', 'pointer', etc.
+    initialized: boolean;
+    value: string | null; // 当前值，如 'NULL', '0', 'malloc_result', etc.
+    declaredAt: number; // 声明行号
+    lastAssignedAt: number; // 最后赋值行号
+    scope: number; // 作用域层级
+}
+
 export class CDetector {
     private patterns: { [key: string]: RegExp } = {};
+    private variableStates: Map<string, VariableState> = new Map();
+    private scopeLevel: number = 0;
 
     constructor() {
         this.initializePatterns();
@@ -100,81 +112,210 @@ export class CDetector {
 
     private detectMemorySafety(lines: string[], filePath: string): BugReport[] {
         const reports: BugReport[] = [];
-        const allocations: { [key: string]: { line: number, functionScope: number } } = {};
-        const frees: Set<string> = new Set();
-        const returns: Set<string> = new Set();
-        let currentFunctionScope = 0;
-        let braceLevel = 0;
+        this.variableStates.clear();
+        this.scopeLevel = 0;
 
         for (let i = 0; i < lines.length; i++) {
             const line = lines[i];
             const lineNum = i + 1;
 
-            // 检测函数定义开始
-            if (this.isFunctionDefinition(line)) {
-                currentFunctionScope = braceLevel;
-            }
+            // 更新作用域层级
+            this.updateScopeLevel(line);
 
-            // 跟踪大括号层级
-            braceLevel += (line.match(/\{/g) || []).length;
-            braceLevel -= (line.match(/\}/g) || []).length;
+            // 处理变量声明和赋值
+            this.processVariableDeclarations(line, lineNum);
+            this.processVariableAssignments(line, lineNum);
 
-            // 检测内存分配
-            const allocMatch = line.match(this.patterns['memory_allocation']);
-            if (allocMatch) {
-                const varName = allocMatch[1];
-                allocations[varName] = { line: lineNum, functionScope: currentFunctionScope };
-            }
+            // 检测指针解引用
+            this.detectPointerDereference(line, lineNum, reports);
 
-            // 检测free调用
-            const freeMatch = line.match(this.patterns['memory_free']);
-            if (freeMatch) {
-                const varMatch = line.match(/free\s*\(\s*(\w+)/);
-                if (varMatch) {
-                    frees.add(varMatch[1]);
+            // 检测内存分配和释放
+            this.processMemoryOperations(line, lineNum);
+        }
+
+        // 检测内存泄漏
+        this.detectMemoryLeaks(reports, lines);
+
+        return reports;
+    }
+
+    private updateScopeLevel(line: string): void {
+        // 检测大括号层级变化
+        const openBraces = (line.match(/\{/g) || []).length;
+        const closeBraces = (line.match(/\}/g) || []).length;
+        
+        this.scopeLevel += openBraces;
+        this.scopeLevel -= closeBraces;
+        
+        // 当作用域结束时，清理该作用域的变量
+        if (closeBraces > 0) {
+            this.cleanupScopeVariables();
+        }
+    }
+
+    private processVariableDeclarations(line: string, lineNum: number): void {
+        // 检测变量声明：int x, char* ptr, etc.
+        const declPatterns = [
+            /^\s*(int|char|float|double|long|short|unsigned|signed|void)\s+(\w+)/,
+            /^\s*(int|char|float|double|long|short|unsigned|signed|void)\s*\*\s*(\w+)/,
+            /^\s*(\w+)\s*\*\s*(\w+)/
+        ];
+
+        for (const pattern of declPatterns) {
+            const match = line.match(pattern);
+            if (match) {
+                const varName = match[2] || match[1];
+                const varType = match[1];
+                const isPointer = line.includes('*');
+                
+                // 检查是否初始化
+                const isInitialized = line.includes('=');
+                let initialValue = null;
+                
+                if (isInitialized) {
+                    const assignMatch = line.match(/=\s*(.+?)(?:;|,|$)/);
+                    if (assignMatch) {
+                        initialValue = assignMatch[1].trim();
+                    }
                 }
-            }
 
-            // 检测return语句
-            if (line.includes('return')) {
-                // 检查return语句中是否包含malloc分配的变量
-                for (const varName of Object.keys(allocations)) {
-                    if (line.includes(varName)) {
-                        returns.add(varName);
+                this.variableStates.set(varName, {
+                    name: varName,
+                    type: isPointer ? 'pointer' : varType,
+                    initialized: isInitialized,
+                    value: initialValue,
+                    declaredAt: lineNum,
+                    lastAssignedAt: isInitialized ? lineNum : 0,
+                    scope: this.scopeLevel
+                });
+            }
+        }
+    }
+
+    private processVariableAssignments(line: string, lineNum: number): void {
+        // 检测赋值语句：x = value, ptr = malloc(...), etc.
+        const assignPattern = /(\w+)\s*=\s*(.+?)(?:;|,|$)/;
+        const match = line.match(assignPattern);
+        
+        if (match) {
+            const varName = match[1];
+            const value = match[2].trim();
+            
+            if (this.variableStates.has(varName)) {
+                const varState = this.variableStates.get(varName)!;
+                varState.initialized = true;
+                varState.value = value;
+                varState.lastAssignedAt = lineNum;
+            }
+        }
+    }
+
+    private detectPointerDereference(line: string, lineNum: number, reports: BugReport[]): void {
+        // 检测指针解引用：*ptr, ptr->field, etc.
+        const derefPatterns = [
+            /\*(\w+)/,  // *ptr
+            /(\w+)->/,  // ptr->field
+            /(\w+)\[/   // ptr[index]
+        ];
+
+        for (const pattern of derefPatterns) {
+            const match = line.match(pattern);
+            if (match) {
+                const varName = match[1];
+                const varState = this.variableStates.get(varName);
+                
+                if (varState && varState.type === 'pointer') {
+                    // 检查指针是否为空
+                    if (varState.value === 'NULL' || !varState.initialized) {
+                        reports.push({
+                            line_number: lineNum,
+                            error_type: '空指针解引用',
+                            severity: 'Error',
+                            message: `指针 ${varName} 可能为空，但被解引用`,
+                            suggestion: '在使用指针前检查是否为NULL',
+                            code_snippet: line.trim(),
+                            module_name: 'memory_safety'
+                        });
                     }
                 }
             }
+        }
+    }
 
-            // 检测空指针解引用（排除函数参数传递）
-            if (line.includes('*') && line.includes('NULL') && !this.isFunctionParameter(line)) {
-                reports.push({
-                    line_number: lineNum,
-                    error_type: '空指针解引用',
-                    severity: 'Error',
-                    message: '检测到可能的空指针解引用',
-                    suggestion: '在使用指针前检查是否为NULL',
-                    code_snippet: line.trim(),
-                    module_name: 'memory_safety'
-                });
+    private processMemoryOperations(line: string, lineNum: number): void {
+        // 检测malloc/calloc/realloc
+        const allocMatch = line.match(/(\w+)\s*=\s*(malloc|calloc|realloc)\s*\(/);
+        if (allocMatch) {
+            const varName = allocMatch[1];
+            if (this.variableStates.has(varName)) {
+                const varState = this.variableStates.get(varName)!;
+                varState.initialized = true;
+                varState.value = 'malloc_result';
+                varState.lastAssignedAt = lineNum;
             }
         }
 
-        // 检测内存泄漏（排除已return或已free的变量）
-        for (const [varName, info] of Object.entries(allocations)) {
-            if (!frees.has(varName) && !returns.has(varName)) {
-                reports.push({
-                    line_number: info.line,
-                    error_type: '内存泄漏',
-                    severity: 'Warning',
-                    message: `变量 ${varName} 分配了内存但未释放`,
-                    suggestion: '在适当位置调用free()释放内存或return该变量',
-                    code_snippet: lines[info.line - 1].trim(),
-                    module_name: 'memory_safety'
-                });
+        // 检测free调用
+        const freeMatch = line.match(/free\s*\(\s*(\w+)/);
+        if (freeMatch) {
+            const varName = freeMatch[1];
+            if (this.variableStates.has(varName)) {
+                const varState = this.variableStates.get(varName)!;
+                varState.value = 'freed';
+                varState.lastAssignedAt = lineNum;
             }
         }
 
-        return reports;
+        // 检测指针赋值为NULL
+        const nullAssignMatch = line.match(/(\w+)\s*=\s*NULL/);
+        if (nullAssignMatch) {
+            const varName = nullAssignMatch[1];
+            if (this.variableStates.has(varName)) {
+                const varState = this.variableStates.get(varName)!;
+                varState.value = 'NULL';
+                varState.lastAssignedAt = lineNum;
+            }
+        }
+    }
+
+    private detectMemoryLeaks(reports: BugReport[], lines: string[]): void {
+        // 检测内存泄漏：malloc但未free的变量
+        for (const [varName, varState] of this.variableStates) {
+            if (varState.type === 'pointer' && 
+                varState.value === 'malloc_result' && 
+                varState.initialized) {
+                
+                // 检查是否有return语句包含该变量
+                let hasReturn = false;
+                for (let i = varState.lastAssignedAt; i < lines.length; i++) {
+                    if (lines[i].includes('return') && lines[i].includes(varName)) {
+                        hasReturn = true;
+                        break;
+                    }
+                }
+                
+                if (!hasReturn) {
+                    reports.push({
+                        line_number: varState.lastAssignedAt,
+                        error_type: '内存泄漏',
+                        severity: 'Warning',
+                        message: `变量 ${varName} 分配了内存但未释放`,
+                        suggestion: '在适当位置调用free()释放内存或return该变量',
+                        code_snippet: lines[varState.lastAssignedAt - 1].trim(),
+                        module_name: 'memory_safety'
+                    });
+                }
+            }
+        }
+    }
+
+    private cleanupScopeVariables(): void {
+        // 清理当前作用域的变量
+        for (const [varName, varState] of this.variableStates) {
+            if (varState.scope > this.scopeLevel) {
+                this.variableStates.delete(varName);
+            }
+        }
     }
 
     private detectVariableState(lines: string[], filePath: string): BugReport[] {
