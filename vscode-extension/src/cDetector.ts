@@ -154,19 +154,33 @@ export class CDetector {
     }
 
     private processVariableDeclarations(line: string, lineNum: number): void {
-        // 检测变量声明：int x, char* ptr, etc.
+        // 检测变量声明：int x, char* ptr, struct Point* p, etc.
         const declPatterns = [
             /^\s*(int|char|float|double|long|short|unsigned|signed|void)\s+(\w+)/,
             /^\s*(int|char|float|double|long|short|unsigned|signed|void)\s*\*\s*(\w+)/,
-            /^\s*(\w+)\s*\*\s*(\w+)/
+            /^\s*(\w+)\s*\*\s*(\w+)/,
+            /^\s*struct\s+(\w+)\s*\*\s*(\w+)/,  // struct Point* p
+            /^\s*struct\s+(\w+)\s+(\w+)/        // struct Point p
         ];
 
         for (const pattern of declPatterns) {
             const match = line.match(pattern);
             if (match) {
-                const varName = match[2] || match[1];
-                const varType = match[1];
-                const isPointer = line.includes('*');
+                let varName: string;
+                let varType: string;
+                let isPointer: boolean;
+                
+                if (pattern.source.includes('struct')) {
+                    // 结构体声明处理
+                    varName = match[2];
+                    varType = `struct ${match[1]}`;
+                    isPointer = line.includes('*');
+                } else {
+                    // 普通变量声明处理
+                    varName = match[2] || match[1];
+                    varType = match[1];
+                    isPointer = line.includes('*');
+                }
                 
                 // 检查是否初始化
                 const isInitialized = line.includes('=');
@@ -193,7 +207,7 @@ export class CDetector {
     }
 
     private processVariableAssignments(line: string, lineNum: number): void {
-        // 检测赋值语句：x = value, ptr = malloc(...), etc.
+        // 检测赋值语句：x = value, ptr = malloc(...), ptr1 = ptr2, etc.
         const assignPattern = /(\w+)\s*=\s*(.+?)(?:;|,|$)/;
         const match = line.match(assignPattern);
         
@@ -206,16 +220,42 @@ export class CDetector {
                 varState.initialized = true;
                 varState.value = value;
                 varState.lastAssignedAt = lineNum;
+                
+                // 处理指针赋值传播
+                this.handlePointerAssignmentPropagation(varName, value, lineNum);
+            }
+        }
+    }
+
+    private handlePointerAssignmentPropagation(targetVar: string, value: string, lineNum: number): void {
+        // 检测指针赋值：ptr1 = ptr2
+        const pointerAssignMatch = value.match(/^(\w+)$/);
+        if (pointerAssignMatch) {
+            const sourceVar = pointerAssignMatch[1];
+            const sourceState = this.variableStates.get(sourceVar);
+            const targetState = this.variableStates.get(targetVar);
+            
+            if (sourceState && targetState && 
+                sourceState.type === 'pointer' && targetState.type === 'pointer') {
+                // 指针赋值传播：目标指针继承源指针的状态
+                targetState.initialized = sourceState.initialized;
+                targetState.value = sourceState.value;
+                targetState.lastAssignedAt = lineNum;
+                
+                // 如果源指针是野指针或空指针，目标指针也变成相同状态
+                if (sourceState.value === 'NULL' || !sourceState.initialized) {
+                    targetState.value = sourceState.value;
+                }
             }
         }
     }
 
     private detectPointerDereference(line: string, lineNum: number, reports: BugReport[]): void {
-        // 检测指针解引用：*ptr, ptr->field, etc.
+        // 检测指针解引用：*ptr, ptr->field, ptr[index], etc.
         const derefPatterns = [
             /\*(\w+)/,  // *ptr
-            /(\w+)->/,  // ptr->field
-            /(\w+)\[/   // ptr[index]
+            /(\w+)->/,  // ptr->field (结构体指针)
+            /(\w+)\[/   // ptr[index] (数组指针)
         ];
 
         for (const pattern of derefPatterns) {
@@ -225,14 +265,23 @@ export class CDetector {
                 const varState = this.variableStates.get(varName);
                 
                 if (varState && varState.type === 'pointer') {
-                    // 检查指针是否为空
+                    // 检查指针是否为空或未初始化
                     if (varState.value === 'NULL' || !varState.initialized) {
+                        let errorType = '空指针解引用';
+                        let message = `指针 ${varName} 可能为空，但被解引用`;
+                        
+                        // 区分野指针和空指针
+                        if (!varState.initialized) {
+                            errorType = '野指针解引用';
+                            message = `指针 ${varName} 未初始化，但被解引用`;
+                        }
+                        
                         reports.push({
                             line_number: lineNum,
-                            error_type: '空指针解引用',
+                            error_type: errorType,
                             severity: 'Error',
-                            message: `指针 ${varName} 可能为空，但被解引用`,
-                            suggestion: '在使用指针前检查是否为NULL',
+                            message: message,
+                            suggestion: '在使用指针前检查是否为NULL或进行初始化',
                             code_snippet: line.trim(),
                             module_name: 'memory_safety'
                         });
