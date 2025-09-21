@@ -40,6 +40,11 @@
         "category": "C Bug Detector"
       },
       {
+        "command": "c-bug-detector.analyzeAllCFiles",
+        "title": "一键检测所有C文件",
+        "category": "C Bug Detector"
+      },
+      {
         "command": "c-bug-detector.showPanel",
         "title": "显示检测面板",
         "category": "C Bug Detector"

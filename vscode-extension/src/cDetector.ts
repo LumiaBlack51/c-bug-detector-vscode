@@ -124,8 +124,8 @@ export class CDetector {
                 }
             }
 
-            // 检测空指针解引用
-            if (line.includes('*') && line.includes('NULL')) {
+            // 检测空指针解引用（排除函数参数传递）
+            if (line.includes('*') && line.includes('NULL') && !this.isFunctionParameter(line)) {
                 reports.push({
                     line_number: lineNum,
                     error_type: '空指针解引用',
@@ -158,11 +158,27 @@ export class CDetector {
 
     private detectVariableState(lines: string[], filePath: string): BugReport[] {
         const reports: BugReport[] = [];
-        const variables: { [key: string]: { declared: number, initialized: boolean, used: number[] } } = {};
+        const variables: { [key: string]: { declared: number, initialized: boolean, used: number[], inStruct: boolean } } = {};
+        let inStructDefinition = false;
+        let braceLevel = 0;
 
         for (let i = 0; i < lines.length; i++) {
             const line = lines[i];
             const lineNum = i + 1;
+
+            // 检测结构体定义开始
+            if (line.includes('struct') && line.includes('{')) {
+                inStructDefinition = true;
+            }
+
+            // 检测大括号层级
+            braceLevel += (line.match(/\{/g) || []).length;
+            braceLevel -= (line.match(/\}/g) || []).length;
+
+            // 检测结构体定义结束
+            if (inStructDefinition && braceLevel === 0 && line.includes('}')) {
+                inStructDefinition = false;
+            }
 
             // 检测变量声明
             const declMatch = line.match(this.patterns['variable_declaration']);
@@ -172,7 +188,8 @@ export class CDetector {
                 variables[varName] = {
                     declared: lineNum,
                     initialized: isInitialized,
-                    used: []
+                    used: [],
+                    inStruct: inStructDefinition
                 };
             }
 
@@ -184,9 +201,9 @@ export class CDetector {
             }
         }
 
-        // 检测未初始化变量使用
+        // 检测未初始化变量使用（排除结构体定义内的变量）
         for (const [varName, info] of Object.entries(variables)) {
-            if (!info.initialized && info.used.length > 0) {
+            if (!info.initialized && info.used.length > 0 && !info.inStruct) {
                 for (const useLine of info.used) {
                     reports.push({
                         line_number: useLine,
@@ -306,5 +323,12 @@ export class CDetector {
         }
 
         return reports;
+    }
+
+    private isFunctionParameter(line: string): boolean {
+        // 检测是否是函数参数传递
+        // 例如: func(NULL), func(ptr), func(&var)
+        const functionCallPattern = /\w+\s*\([^)]*NULL[^)]*\)/;
+        return functionCallPattern.test(line);
     }
 }

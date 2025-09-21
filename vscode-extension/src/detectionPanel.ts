@@ -44,9 +44,12 @@ export class DetectionPanel {
                     case 'analyzeFile':
                         await this.handleAnalyzeFile(message.filePath);
                         break;
-                    case 'analyzeWorkspace':
-                        await this.handleAnalyzeWorkspace();
-                        break;
+                case 'analyzeWorkspace':
+                    await this.handleAnalyzeWorkspace();
+                    break;
+                case 'analyzeAllCFiles':
+                    await this.handleAnalyzeAllCFiles();
+                    break;
                     case 'clearResults':
                         this.resultsProvider.clearResults();
                         this.updateWebview();
@@ -107,6 +110,29 @@ export class DetectionPanel {
 
     private async handleAnalyzeWorkspace(): Promise<void> {
         await this.analyzeWorkspace();
+    }
+
+    private async handleAnalyzeAllCFiles(): Promise<void> {
+        if (!vscode.workspace.workspaceFolders) {
+            vscode.window.showWarningMessage('请先打开一个工作区');
+            return;
+        }
+
+        try {
+            const results = await this.backend.analyzeWorkspace();
+            this.resultsProvider.updateResults(results);
+            
+            const totalIssues = results.reduce((sum, result) => sum + (result.success ? result.reports.length : 0), 0);
+            const totalFiles = results.length;
+            
+            vscode.window.showInformationMessage(
+                `批量分析完成！检查了 ${totalFiles} 个C文件，发现 ${totalIssues} 个问题`
+            );
+            
+            this.updateWebview();
+        } catch (error) {
+            vscode.window.showErrorMessage(`批量分析失败: ${error}`);
+        }
     }
 
     private updateWebview(): void {
@@ -269,6 +295,7 @@ export class DetectionPanel {
         <div class="buttons">
             <button onclick="analyzeCurrentFile()">分析当前文件</button>
             <button onclick="analyzeWorkspace()">分析工作区</button>
+            <button onclick="analyzeAllCFiles()">一键检测所有C文件</button>
             <button onclick="clearResults()">清除结果</button>
         </div>
     </div>
@@ -290,6 +317,12 @@ export class DetectionPanel {
         function analyzeWorkspace() {
             vscode.postMessage({
                 command: 'analyzeWorkspace'
+            });
+        }
+        
+        function analyzeAllCFiles() {
+            vscode.postMessage({
+                command: 'analyzeAllCFiles'
             });
         }
         

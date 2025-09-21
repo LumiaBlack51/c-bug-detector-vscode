@@ -31,6 +31,27 @@ export function activate(context: vscode.ExtensionContext) {
         await detectionPanel.analyzeWorkspace();
     });
 
+    const analyzeAllCFilesCommand = vscode.commands.registerCommand('c-bug-detector.analyzeAllCFiles', async () => {
+        if (!vscode.workspace.workspaceFolders) {
+            vscode.window.showWarningMessage('请先打开一个工作区');
+            return;
+        }
+
+        try {
+            const results = await backend.analyzeWorkspace();
+            resultsProvider.updateResults(results);
+            
+            const totalIssues = results.reduce((sum, result) => sum + (result.success ? result.reports.length : 0), 0);
+            const totalFiles = results.length;
+            
+            vscode.window.showInformationMessage(
+                `批量分析完成！检查了 ${totalFiles} 个C文件，发现 ${totalIssues} 个问题`
+            );
+        } catch (error) {
+            vscode.window.showErrorMessage(`批量分析失败: ${error}`);
+        }
+    });
+
     const showPanelCommand = vscode.commands.registerCommand('c-bug-detector.showPanel', () => {
         detectionPanel.show();
     });
@@ -70,6 +91,7 @@ export function activate(context: vscode.ExtensionContext) {
     context.subscriptions.push(
         analyzeFileCommand,
         analyzeWorkspaceCommand,
+        analyzeAllCFilesCommand,
         showPanelCommand,
         clearResultsCommand,
         resultsTreeView,

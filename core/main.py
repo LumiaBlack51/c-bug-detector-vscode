@@ -173,7 +173,7 @@ def main():
     parser.add_argument('--disable', nargs='+', help='禁用的模块列表')
     parser.add_argument('--enable', nargs='+', help='启用的模块列表')
     parser.add_argument('--list-modules', action='store_true', help='列出所有可用模块')
-    parser.add_argument('--batch', action='store_true', help='批量处理模式')
+    parser.add_argument('--batch', action='store_true', help='批量检测模式：检测目录下所有C文件')
     
     args = parser.parse_args()
     
@@ -214,16 +214,26 @@ def main():
             print(f"{Fore.GREEN}✅ 恭喜！没有发现任何问题。{Style.RESET_ALL}")
     
     elif args.input and os.path.isdir(args.input):
-        # 目录分析
+        # 目录分析（批量检测模式）
+        print(f"{Fore.CYAN}🔍 开始批量检测目录: {args.input}{Style.RESET_ALL}")
         results = detector.analyze_directory(args.input)
         
         if results:
             total_issues = sum(len(reports) for reports in results.values())
-            print(f"\n{Fore.YELLOW}📊 批量检测完成，共分析 {len(results)} 个文件，发现 {total_issues} 个问题{Style.RESET_ALL}")
+            print(f"\n{Fore.GREEN}✅ 批量检测完成！{Style.RESET_ALL}")
+            print(f"{Fore.CYAN}📊 统计结果:{Style.RESET_ALL}")
+            print(f"   - 检测文件数: {len(results)}")
+            print(f"   - 发现问题数: {total_issues}")
             
-            for file_path, reports in results.items():
-                print(f"\n{Fore.CYAN}📁 文件: {file_path}{Style.RESET_ALL}")
-                print(detector.generate_report(reports, args.format))
+            # 只显示有问题的文件
+            problem_files = {k: v for k, v in results.items() if v}
+            if problem_files:
+                print(f"\n{Fore.YELLOW}⚠️  发现问题的文件:{Style.RESET_ALL}")
+                for file_path, reports in problem_files.items():
+                    print(f"\n{Fore.CYAN}📁 文件: {file_path}{Style.RESET_ALL}")
+                    print(detector.generate_report(reports, args.format))
+            else:
+                print(f"{Fore.GREEN}🎉 所有文件都没有发现问题！{Style.RESET_ALL}")
             
             if args.output:
                 # 合并所有报告
@@ -231,6 +241,7 @@ def main():
                 for reports in results.values():
                     all_reports.extend(reports)
                 detector.save_report(all_reports, args.output, args.format)
+                print(f"{Fore.BLUE}💾 报告已保存到: {args.output}{Style.RESET_ALL}")
         else:
             print(f"{Fore.GREEN}✅ 恭喜！所有文件都没有发现任何问题。{Style.RESET_ALL}")
 
