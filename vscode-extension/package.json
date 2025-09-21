@@ -132,16 +132,17 @@
         },
         "c-bug-detector.backendPath": {
           "type": "string",
-          "default": "../main.py",
-          "description": "后端检测器路径"
+          "default": "backend/main.py",
+          "description": "后端检测器路径（相对于插件目录）"
         }
       }
     }
   },
   "scripts": {
-    "vscode:prepublish": "npm run compile",
+    "vscode:prepublish": "npm run compile && npm run copy-backend",
     "compile": "tsc -p ./",
-    "watch": "tsc -watch -p ./"
+    "watch": "tsc -watch -p ./",
+    "copy-backend": "node scripts/copy-backend.js"
   },
   "devDependencies": {
     "@types/vscode": "^1.74.0",

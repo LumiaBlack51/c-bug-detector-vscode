@@ -37,10 +37,46 @@ export class BugDetectorBackend {
             const backendPath = this.config.get<string>('backendPath', '../main.py');
             
             // 构建完整的后端路径
-            const fullBackendPath = path.resolve(__dirname, backendPath);
+            let fullBackendPath: string;
+            
+            // 如果是相对路径，尝试多个可能的位置
+            if (path.isAbsolute(backendPath)) {
+                fullBackendPath = backendPath;
+            } else {
+                // 尝试多个可能的后端路径
+                const possiblePaths = [
+                    // 插件内置的后端文件
+                    path.resolve(__dirname, '../backend/main.py'),
+                    // 用户配置的相对路径
+                    path.resolve(__dirname, backendPath),
+                    // 开发环境的路径
+                    path.resolve(__dirname, '../../main.py'),
+                    path.resolve(__dirname, '../../../main.py'),
+                    // 工作区路径
+                    path.resolve(process.cwd(), 'main.py'),
+                    path.resolve(process.cwd(), '../main.py'),
+                    path.resolve(process.cwd(), '../../main.py'),
+                ];
+                
+                // 查找存在的路径
+                fullBackendPath = possiblePaths.find(p => fs.existsSync(p)) || possiblePaths[0];
+            }
             
             if (!fs.existsSync(fullBackendPath)) {
-                throw new Error(`后端检测器不存在: ${fullBackendPath}`);
+                // 提供更详细的错误信息
+                const possiblePaths = [
+                    path.resolve(__dirname, '../main.py'),
+                    path.resolve(__dirname, '../../main.py'),
+                    path.resolve(__dirname, '../../../main.py'),
+                    path.resolve(process.cwd(), 'main.py'),
+                ];
+                
+                const errorMsg = `后端检测器不存在: ${fullBackendPath}\n\n` +
+                    `请检查以下路径之一是否存在main.py文件:\n` +
+                    possiblePaths.map(p => `  - ${p}`).join('\n') + '\n\n' +
+                    `或者在VS Code设置中配置正确的backendPath路径。`;
+                
+                throw new Error(errorMsg);
             }
 
             // 构建命令参数
