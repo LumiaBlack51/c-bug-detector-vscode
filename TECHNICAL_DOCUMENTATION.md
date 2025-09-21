@@ -497,7 +497,48 @@ python main.py tests/test_memory_safety.c
 
 ### 常见问题及解决方案
 
-#### 1. TypeScript编译错误
+#### 1. VS Code插件后端路径问题
+**问题**: `检测失败: 后端检测器不存在: c:\Users\Bai\.vscode\extensions\c-bug-detector.c-bug-detector-1.0.0\main.py`
+
+**原因**: 插件安装后，`__dirname`指向插件安装目录，但Python后端文件不在插件包中。
+
+**解决方案**:
+1. **将Python文件打包到VSIX中**:
+   ```javascript
+   // scripts/copy-backend.js
+   const filesToCopy = [
+       'main.py',
+       'requirements.txt',
+       'modules/memory_safety.py',
+       // ... 其他文件
+   ];
+   ```
+
+2. **优化路径解析逻辑**:
+   ```typescript
+   const possiblePaths = [
+       // 插件内置的后端文件
+       path.resolve(__dirname, '../backend/main.py'),
+       // 用户配置的相对路径
+       path.resolve(__dirname, backendPath),
+       // 开发环境的路径
+       path.resolve(__dirname, '../../main.py'),
+       // 工作区路径
+       path.resolve(process.cwd(), 'main.py'),
+   ];
+   ```
+
+3. **更新打包脚本**:
+   ```json
+   {
+     "scripts": {
+       "vscode:prepublish": "npm run compile && npm run copy-backend",
+       "copy-backend": "node scripts/copy-backend.js"
+     }
+   }
+   ```
+
+#### 2. TypeScript编译错误
 **问题**: `Property 'dispose' is missing`
 **解决方案**: 确保类实现了Disposable接口
 ```typescript
@@ -508,7 +549,7 @@ export class ResultsProvider implements vscode.TreeDataProvider<BugItem>, vscode
 }
 ```
 
-#### 2. Python子进程启动失败
+#### 3. Python子进程启动失败
 **问题**: `启动检测器失败`
 **解决方案**: 检查Python路径和权限
 ```typescript
@@ -519,7 +560,7 @@ pythonCheck.on('error', (error) => {
 });
 ```
 
-#### 3. JSON解析错误
+#### 4. JSON解析错误
 **问题**: `解析结果失败`
 **解决方案**: 添加JSON验证
 ```typescript
@@ -535,7 +576,7 @@ try {
 }
 ```
 
-#### 4. 插件安装失败
+#### 5. 插件安装失败
 **问题**: VSIX文件无法安装
 **解决方案**: 检查VS Code版本和文件完整性
 ```bash
