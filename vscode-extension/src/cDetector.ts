@@ -100,27 +100,48 @@ export class CDetector {
 
     private detectMemorySafety(lines: string[], filePath: string): BugReport[] {
         const reports: BugReport[] = [];
-        const allocations: { [key: string]: number } = {};
+        const allocations: { [key: string]: { line: number, functionScope: number } } = {};
         const frees: Set<string> = new Set();
+        const returns: Set<string> = new Set();
+        let currentFunctionScope = 0;
+        let braceLevel = 0;
 
         for (let i = 0; i < lines.length; i++) {
             const line = lines[i];
             const lineNum = i + 1;
 
+            // 检测函数定义开始
+            if (this.isFunctionDefinition(line)) {
+                currentFunctionScope = braceLevel;
+            }
+
+            // 跟踪大括号层级
+            braceLevel += (line.match(/\{/g) || []).length;
+            braceLevel -= (line.match(/\}/g) || []).length;
+
             // 检测内存分配
             const allocMatch = line.match(this.patterns['memory_allocation']);
             if (allocMatch) {
                 const varName = allocMatch[1];
-                allocations[varName] = lineNum;
+                allocations[varName] = { line: lineNum, functionScope: currentFunctionScope };
             }
 
             // 检测free调用
             const freeMatch = line.match(this.patterns['memory_free']);
             if (freeMatch) {
-                // 简单检测：如果free后面有变量名
                 const varMatch = line.match(/free\s*\(\s*(\w+)/);
                 if (varMatch) {
                     frees.add(varMatch[1]);
+                }
+            }
+
+            // 检测return语句
+            if (line.includes('return')) {
+                // 检查return语句中是否包含malloc分配的变量
+                for (const varName of Object.keys(allocations)) {
+                    if (line.includes(varName)) {
+                        returns.add(varName);
+                    }
                 }
             }
 
@@ -138,16 +159,16 @@ export class CDetector {
             }
         }
 
-        // 检测内存泄漏
-        for (const [varName, lineNum] of Object.entries(allocations)) {
-            if (!frees.has(varName)) {
+        // 检测内存泄漏（排除已return或已free的变量）
+        for (const [varName, info] of Object.entries(allocations)) {
+            if (!frees.has(varName) && !returns.has(varName)) {
                 reports.push({
-                    line_number: lineNum,
+                    line_number: info.line,
                     error_type: '内存泄漏',
                     severity: 'Warning',
                     message: `变量 ${varName} 分配了内存但未释放`,
-                    suggestion: '在适当位置调用free()释放内存',
-                    code_snippet: lines[lineNum - 1].trim(),
+                    suggestion: '在适当位置调用free()释放内存或return该变量',
+                    code_snippet: lines[info.line - 1].trim(),
                     module_name: 'memory_safety'
                 });
             }
@@ -158,13 +179,19 @@ export class CDetector {
 
     private detectVariableState(lines: string[], filePath: string): BugReport[] {
         const reports: BugReport[] = [];
-        const variables: { [key: string]: { declared: number, initialized: boolean, used: number[], inStruct: boolean } } = {};
+        const variables: { [key: string]: { declared: number, initialized: boolean, used: number[], inStruct: boolean, inFunction: boolean } } = {};
         let inStructDefinition = false;
+        let inFunctionDefinition = false;
         let braceLevel = 0;
 
         for (let i = 0; i < lines.length; i++) {
             const line = lines[i];
             const lineNum = i + 1;
+
+            // 检测函数定义开始
+            if (this.isFunctionDefinition(line)) {
+                inFunctionDefinition = true;
+            }
 
             // 检测结构体定义开始
             if (line.includes('struct') && line.includes('{')) {
@@ -180,30 +207,41 @@ export class CDetector {
                 inStructDefinition = false;
             }
 
-            // 检测变量声明
+            // 检测函数定义结束（当大括号层级回到函数定义前的层级时）
+            if (inFunctionDefinition && braceLevel === 0 && line.includes('}')) {
+                inFunctionDefinition = false;
+            }
+
+            // 检测变量声明（排除函数定义中的参数）
             const declMatch = line.match(this.patterns['variable_declaration']);
-            if (declMatch) {
+            if (declMatch && !this.isFunctionDefinition(line)) {
                 const varName = declMatch[2];
                 const isInitialized = line.includes('=');
                 variables[varName] = {
                     declared: lineNum,
                     initialized: isInitialized,
                     used: [],
-                    inStruct: inStructDefinition
+                    inStruct: inStructDefinition,
+                    inFunction: inFunctionDefinition
                 };
             }
 
-            // 检测变量使用
+            // 检测变量使用（排除函数定义中的使用）
             for (const varName of Object.keys(variables)) {
-                if (line.includes(varName) && !line.includes('=') && !line.includes('int ') && !line.includes('char ')) {
+                if (line.includes(varName) && 
+                    !line.includes('=') && 
+                    !line.includes('int ') && 
+                    !line.includes('char ') &&
+                    !this.isFunctionDefinition(line) &&
+                    !this.isFunctionCall(line, varName)) {
                     variables[varName].used.push(lineNum);
                 }
             }
         }
 
-        // 检测未初始化变量使用（排除结构体定义内的变量）
+        // 检测未初始化变量使用（排除结构体定义和函数定义内的变量）
         for (const [varName, info] of Object.entries(variables)) {
-            if (!info.initialized && info.used.length > 0 && !info.inStruct) {
+            if (!info.initialized && info.used.length > 0 && !info.inStruct && !info.inFunction) {
                 for (const useLine of info.used) {
                     reports.push({
                         line_number: useLine,
@@ -329,6 +367,20 @@ export class CDetector {
         // 检测是否是函数参数传递
         // 例如: func(NULL), func(ptr), func(&var)
         const functionCallPattern = /\w+\s*\([^)]*NULL[^)]*\)/;
+        return functionCallPattern.test(line);
+    }
+
+    private isFunctionDefinition(line: string): boolean {
+        // 检测函数定义：有返回类型、函数名、参数列表和大括号
+        // 例如: int func(int x) { 或 void func() {
+        const functionDefPattern = /^\s*(\w+\s+)*\w+\s+\w+\s*\([^)]*\)\s*\{/;
+        return functionDefPattern.test(line);
+    }
+
+    private isFunctionCall(line: string, varName: string): boolean {
+        // 检测是否是函数调用中的变量使用
+        // 例如: func(varName) 或 func(ptr, varName)
+        const functionCallPattern = new RegExp(`\\w+\\s*\\([^)]*\\b${varName}\\b[^)]*\\)`);
         return functionCallPattern.test(line);
     }
 }
