@@ -36,18 +36,92 @@ export class CDetector {
         this.initializePatterns();
     }
 
+    /**
+     * 移除行中的注释，返回纯代码部分
+     * @param line 原始代码行
+     * @returns 移除注释后的代码行
+     */
+    private removeComments(line: string): string {
+        let result = line;
+        
+        // 处理单行注释 //
+        const singleLineCommentIndex = result.indexOf('//');
+        if (singleLineCommentIndex !== -1) {
+            result = result.substring(0, singleLineCommentIndex);
+        }
+        
+        // 处理多行注释 /* */
+        // 注意：这里只处理单行内的多行注释，跨行注释需要更复杂的处理
+        const multiLineCommentRegex = /\/\*.*?\*\//g;
+        result = result.replace(multiLineCommentRegex, '');
+        
+        return result.trim();
+    }
+
+    /**
+     * 移除多行注释（跨行处理）
+     * @param lines 代码行数组
+     * @returns 移除多行注释后的代码行数组
+     */
+    private removeMultiLineComments(lines: string[]): string[] {
+        const result: string[] = [];
+        let inMultiLineComment = false;
+        
+        for (let i = 0; i < lines.length; i++) {
+            let line = lines[i];
+            
+            if (inMultiLineComment) {
+                // 在多行注释中，查找结束标记 */
+                const endIndex = line.indexOf('*/');
+                if (endIndex !== -1) {
+                    // 找到结束标记，移除注释部分
+                    line = line.substring(endIndex + 2);
+                    inMultiLineComment = false;
+                } else {
+                    // 整行都是注释，跳过
+                    continue;
+                }
+            }
+            
+            // 查找多行注释开始标记 /*
+            const startIndex = line.indexOf('/*');
+            if (startIndex !== -1) {
+                // 检查是否在同一行结束
+                const endIndex = line.indexOf('*/', startIndex);
+                if (endIndex !== -1) {
+                    // 同一行内结束，移除注释部分
+                    line = line.substring(0, startIndex) + line.substring(endIndex + 2);
+                } else {
+                    // 跨行注释开始，移除开始部分
+                    line = line.substring(0, startIndex);
+                    inMultiLineComment = true;
+                }
+            }
+            
+            // 移除单行注释
+            line = this.removeComments(line);
+            
+            // 只保留非空行
+            if (line.trim().length > 0) {
+                result.push(line);
+            }
+        }
+        
+        return result;
+    }
+
     private initializePatterns(): void {
-        // 函数定义
-        this.patterns['function_definition'] = /^\s*(\w+)\s+(\w+)\s*\([^)]*\)\s*\{/;
+        // 函数定义（支持汉字变量名）
+        this.patterns['function_definition'] = /^\s*(\w+)\s+([\w\u4e00-\u9fff]+)\s*\([^)]*\)\s*\{/;
         
-        // 变量声明
-        this.patterns['variable_declaration'] = /^\s*(int|char|float|double|long|short|unsigned|signed|void)\s+(\w+)/;
+        // 变量声明（支持汉字变量名）
+        this.patterns['variable_declaration'] = /^\s*(int|char|float|double|long|short|unsigned|signed|void)\s+([\w\u4e00-\u9fff]+)/;
         
-        // 函数调用
-        this.patterns['function_call'] = /(\w+)\s*\(/;
+        // 函数调用（支持汉字变量名）
+        this.patterns['function_call'] = /([\w\u4e00-\u9fff]+)\s*\(/;
         
-        // malloc/calloc/realloc
-        this.patterns['memory_allocation'] = /(\w+)\s*=\s*(malloc|calloc|realloc)\s*\(/;
+        // malloc/calloc/realloc（支持汉字变量名）
+        this.patterns['memory_allocation'] = /([\w\u4e00-\u9fff]+)\s*=\s*(malloc|calloc|realloc)\s*\(/;
         
         // free调用
         this.patterns['memory_free'] = /free\s*\(/;
@@ -64,27 +138,31 @@ export class CDetector {
         // for循环
         this.patterns['for_loop'] = /for\s*\(/;
         
-        // 赋值语句
-        this.patterns['assignment'] = /(\w+)\s*=\s*(.+)/;
+        // 赋值语句（支持汉字变量名）
+        this.patterns['assignment'] = /([\w\u4e00-\u9fff]+)\s*=\s*(.+)/;
         
-        // 指针解引用
-        this.patterns['pointer_dereference'] = /\*(\w+)/;
+        // 指针解引用（支持汉字变量名）
+        this.patterns['pointer_dereference'] = /\*([\w\u4e00-\u9fff]+)/;
         
-        // 取地址
-        this.patterns['address_of'] = /&(\w+)/;
+        // 取地址（支持汉字变量名）
+        this.patterns['address_of'] = /&([\w\u4e00-\u9fff]+)/;
     }
 
     public analyzeFile(filePath: string): AnalysisResult {
         try {
             const content = this.readFileContent(filePath);
-            const lines = content.split('\n');
+            const originalLines = content.split('\n');
+            
+            // 移除注释，获取纯代码行
+            const cleanLines = this.removeMultiLineComments(originalLines);
+            
             const reports: BugReport[] = [];
 
-            // 运行所有检测模块
-            reports.push(...this.detectMemorySafety(lines, filePath));
-            reports.push(...this.detectVariableState(lines, filePath));
-            reports.push(...this.detectStandardLibrary(lines, filePath));
-            reports.push(...this.detectNumericControlFlow(lines, filePath));
+            // 运行所有检测模块（使用原始行号进行报告）
+            reports.push(...this.detectMemorySafety(originalLines, filePath));
+            reports.push(...this.detectVariableState(originalLines, filePath));
+            reports.push(...this.detectStandardLibrary(originalLines, filePath));
+            reports.push(...this.detectNumericControlFlow(originalLines, filePath));
 
             return {
                 file_path: filePath,
@@ -116,8 +194,16 @@ export class CDetector {
         this.scopeLevel = 0;
 
         for (let i = 0; i < lines.length; i++) {
-            const line = lines[i];
+            const originalLine = lines[i];
             const lineNum = i + 1;
+            
+            // 移除注释，获取纯代码
+            const line = this.removeComments(originalLine);
+            
+            // 跳过空行
+            if (line.trim().length === 0) {
+                continue;
+            }
 
             // 更新作用域层级
             this.updateScopeLevel(line);
@@ -154,13 +240,13 @@ export class CDetector {
     }
 
     private processVariableDeclarations(line: string, lineNum: number): void {
-        // 检测变量声明：int x, char* ptr, struct Point* p, etc.
+        // 检测变量声明：int x, char* ptr, struct Point* p, etc.（支持汉字变量名）
         const declPatterns = [
-            /^\s*(int|char|float|double|long|short|unsigned|signed|void)\s+(\w+)/,
-            /^\s*(int|char|float|double|long|short|unsigned|signed|void)\s*\*\s*(\w+)/,
-            /^\s*(\w+)\s*\*\s*(\w+)/,
-            /^\s*struct\s+(\w+)\s*\*\s*(\w+)/,  // struct Point* p
-            /^\s*struct\s+(\w+)\s+(\w+)/        // struct Point p
+            /^\s*(int|char|float|double|long|short|unsigned|signed|void)\s+([\w\u4e00-\u9fff]+)/,
+            /^\s*(int|char|float|double|long|short|unsigned|signed|void)\s*\*\s*([\w\u4e00-\u9fff]+)/,
+            /^\s*([\w\u4e00-\u9fff]+)\s*\*\s*([\w\u4e00-\u9fff]+)/,
+            /^\s*struct\s+([\w\u4e00-\u9fff]+)\s*\*\s*([\w\u4e00-\u9fff]+)/,  // struct Point* p
+            /^\s*struct\s+([\w\u4e00-\u9fff]+)\s+([\w\u4e00-\u9fff]+)/        // struct Point p
         ];
 
         for (const pattern of declPatterns) {
@@ -207,8 +293,8 @@ export class CDetector {
     }
 
     private processVariableAssignments(line: string, lineNum: number): void {
-        // 检测赋值语句：x = value, ptr = malloc(...), ptr1 = ptr2, etc.
-        const assignPattern = /(\w+)\s*=\s*(.+?)(?:;|,|$)/;
+        // 检测赋值语句：x = value, ptr = malloc(...), ptr1 = ptr2, etc.（支持汉字变量名）
+        const assignPattern = /([\w\u4e00-\u9fff]+)\s*=\s*(.+?)(?:;|,|$)/;
         const match = line.match(assignPattern);
         
         if (match) {
@@ -251,11 +337,11 @@ export class CDetector {
     }
 
     private detectPointerDereference(line: string, lineNum: number, reports: BugReport[]): void {
-        // 检测指针解引用：*ptr, ptr->field, ptr[index], etc.
+        // 检测指针解引用：*ptr, ptr->field, ptr[index], etc.（支持汉字变量名）
         const derefPatterns = [
-            /\*(\w+)/,  // *ptr
-            /(\w+)->/,  // ptr->field (结构体指针)
-            /(\w+)\[/   // ptr[index] (数组指针)
+            /\*([\w\u4e00-\u9fff]+)/,  // *ptr
+            /([\w\u4e00-\u9fff]+)->/,  // ptr->field (结构体指针)
+            /([\w\u4e00-\u9fff]+)\[/   // ptr[index] (数组指针)
         ];
 
         for (const pattern of derefPatterns) {
@@ -375,8 +461,16 @@ export class CDetector {
         let braceLevel = 0;
 
         for (let i = 0; i < lines.length; i++) {
-            const line = lines[i];
+            const originalLine = lines[i];
             const lineNum = i + 1;
+            
+            // 移除注释，获取纯代码
+            const line = this.removeComments(originalLine);
+            
+            // 跳过空行
+            if (line.trim().length === 0) {
+                continue;
+            }
 
             // 检测函数定义开始
             if (this.isFunctionDefinition(line)) {
@@ -455,8 +549,16 @@ export class CDetector {
 
         // 检测头文件包含
         for (let i = 0; i < lines.length; i++) {
-            const line = lines[i];
+            const originalLine = lines[i];
             const lineNum = i + 1;
+            
+            // 移除注释，获取纯代码
+            const line = this.removeComments(originalLine);
+            
+            // 跳过空行
+            if (line.trim().length === 0) {
+                continue;
+            }
 
             if (line.includes('#include')) {
                 const includeMatch = line.match(/#include\s*[<"]([^>"]+)[>"]/);
@@ -518,8 +620,16 @@ export class CDetector {
         const reports: BugReport[] = [];
 
         for (let i = 0; i < lines.length; i++) {
-            const line = lines[i];
+            const originalLine = lines[i];
             const lineNum = i + 1;
+            
+            // 移除注释，获取纯代码
+            const line = this.removeComments(originalLine);
+            
+            // 跳过空行
+            if (line.trim().length === 0) {
+                continue;
+            }
 
             // 检测类型溢出
             const overflowMatch = line.match(/(char|short)\s+(\w+)\s*=\s*(\d+)/);
