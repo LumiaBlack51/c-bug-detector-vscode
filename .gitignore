@@ -70,6 +70,8 @@ Thumbs.db
 .vscode-test/
 out/
 *.vsix
+vscode-extension/node_modules/
+vscode-extension/out/
 
 # Logs
 *.log

@@ -1,0 +1,151 @@
+{
+  "name": "c-bug-detector",
+  "displayName": "C语言Bug检测器",
+  "description": "专为初学者设计的C语言bug检测器，采用启发式与正则表达式方法",
+  "version": "1.0.0",
+  "publisher": "c-bug-detector",
+  "engines": {
+    "vscode": "^1.74.0"
+  },
+  "categories": [
+    "Linters",
+    "Other"
+  ],
+  "keywords": [
+    "c",
+    "bug",
+    "detector",
+    "memory",
+    "safety",
+    "static-analysis"
+  ],
+  "activationEvents": [
+    "onLanguage:c"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "c-bug-detector.analyzeFile",
+        "title": "分析当前C文件",
+        "category": "C Bug Detector"
+      },
+      {
+        "command": "c-bug-detector.analyzeWorkspace",
+        "title": "分析工作区所有C文件",
+        "category": "C Bug Detector"
+      },
+      {
+        "command": "c-bug-detector.showPanel",
+        "title": "显示检测面板",
+        "category": "C Bug Detector"
+      },
+      {
+        "command": "c-bug-detector.clearResults",
+        "title": "清除检测结果",
+        "category": "C Bug Detector"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "c-bug-detector.analyzeFile",
+        "key": "ctrl+shift+b",
+        "mac": "cmd+shift+b",
+        "when": "editorTextFocus && resourceExtname == '.c'"
+      }
+    ],
+    "menus": {
+      "editor/context": [
+        {
+          "when": "resourceExtname == '.c'",
+          "command": "c-bug-detector.analyzeFile",
+          "group": "c-bug-detector"
+        }
+      ],
+      "explorer/context": [
+        {
+          "when": "resourceExtname == '.c'",
+          "command": "c-bug-detector.analyzeFile",
+          "group": "c-bug-detector"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "c-bug-detector.analyzeFile"
+        },
+        {
+          "command": "c-bug-detector.analyzeWorkspace"
+        },
+        {
+          "command": "c-bug-detector.showPanel"
+        },
+        {
+          "command": "c-bug-detector.clearResults"
+        }
+      ]
+    },
+    "views": {
+      "c-bug-detector": [
+        {
+          "id": "c-bug-detector-results",
+          "name": "检测结果",
+          "when": "c-bug-detector.hasResults"
+        }
+      ]
+    },
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "c-bug-detector",
+          "title": "C Bug Detector",
+          "icon": "media/icon.svg"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "C Bug Detector",
+      "properties": {
+        "c-bug-detector.enableMemorySafety": {
+          "type": "boolean",
+          "default": true,
+          "description": "启用内存安全卫士模块"
+        },
+        "c-bug-detector.enableVariableState": {
+          "type": "boolean",
+          "default": true,
+          "description": "启用变量状态监察官模块"
+        },
+        "c-bug-detector.enableStandardLibrary": {
+          "type": "boolean",
+          "default": true,
+          "description": "启用标准库使用助手模块"
+        },
+        "c-bug-detector.enableNumericControlFlow": {
+          "type": "boolean",
+          "default": true,
+          "description": "启用数值与控制流分析器模块"
+        },
+        "c-bug-detector.pythonPath": {
+          "type": "string",
+          "default": "python",
+          "description": "Python解释器路径"
+        },
+        "c-bug-detector.backendPath": {
+          "type": "string",
+          "default": "../main.py",
+          "description": "后端检测器路径"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.74.0",
+    "@types/node": "16.x",
+    "typescript": "^4.9.4"
+  }
+}

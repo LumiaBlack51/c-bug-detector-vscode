@@ -1,0 +1,47 @@
+<svg width="128" height="128" viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#4CAF50;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#2E7D32;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="bug" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#FF5722;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#D32F2F;stop-opacity:1" />
+    </linearGradient>
+  </defs>
+  
+  <!-- Background circle -->
+  <circle cx="64" cy="64" r="60" fill="url(#bg)" stroke="#1B5E20" stroke-width="4"/>
+  
+  <!-- C letter -->
+  <path d="M 40 30 L 40 98 L 88 98 L 88 90 L 48 90 L 48 38 L 88 38 L 88 30 Z" fill="white" opacity="0.9"/>
+  
+  <!-- Bug icon -->
+  <g transform="translate(64, 64)">
+    <!-- Bug body -->
+    <ellipse cx="0" cy="0" rx="12" ry="8" fill="url(#bug)"/>
+    
+    <!-- Bug head -->
+    <circle cx="0" cy="-12" r="6" fill="url(#bug)"/>
+    
+    <!-- Bug antennae -->
+    <line x1="-4" y1="-18" x2="-8" y2="-24" stroke="url(#bug)" stroke-width="2" stroke-linecap="round"/>
+    <line x1="4" y1="-18" x2="8" y2="-24" stroke="url(#bug)" stroke-width="2" stroke-linecap="round"/>
+    
+    <!-- Bug legs -->
+    <line x1="-12" y1="-4" x2="-18" y2="-8" stroke="url(#bug)" stroke-width="2" stroke-linecap="round"/>
+    <line x1="-12" y1="4" x2="-18" y2="8" stroke="url(#bug)" stroke-width="2" stroke-linecap="round"/>
+    <line x1="12" y1="-4" x2="18" y2="-8" stroke="url(#bug)" stroke-width="2" stroke-linecap="round"/>
+    <line x1="12" y1="4" x2="18" y2="8" stroke="url(#bug)" stroke-width="2" stroke-linecap="round"/>
+    
+    <!-- Bug eyes -->
+    <circle cx="-3" cy="-12" r="1.5" fill="white"/>
+    <circle cx="3" cy="-12" r="1.5" fill="white"/>
+  </g>
+  
+  <!-- Magnifying glass -->
+  <g transform="translate(90, 30)">
+    <circle cx="0" cy="0" r="15" fill="none" stroke="white" stroke-width="3" opacity="0.8"/>
+    <line x1="10" y1="10" x2="20" y2="20" stroke="white" stroke-width="3" stroke-linecap="round" opacity="0.8"/>
+  </g>
+</svg>
