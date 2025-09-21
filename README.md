@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # C Bug Detector VS Code Extension
 
 这是C语言Bug检测器的VS Code扩展插件。
@@ -229,3 +230,7 @@ vsce package
 ---
 
 **C Bug Detector VS Code Extension - 让C语言编程更安全、更简单！** 🚀✨
+=======
+# c-bug-detector-vscode
+A VS Code extension for detecting common C programming bugs with Python backend analysis
+>>>>>>> 19bdc9c081fcd55b594e1f290ba41a54f986c235
