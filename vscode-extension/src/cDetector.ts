@@ -114,8 +114,8 @@ export class CDetector {
         // 函数定义（支持汉字变量名）
         this.patterns['function_definition'] = /^\s*(\w+)\s+([\w\u4e00-\u9fff]+)\s*\([^)]*\)\s*\{/;
         
-        // 变量声明（支持汉字变量名）
-        this.patterns['variable_declaration'] = /^\s*(int|char|float|double|long|short|unsigned|signed|void)\s+([\w\u4e00-\u9fff]+)/;
+        // 变量声明（支持汉字变量名、static关键字、指针类型，排除函数定义）
+        this.patterns['variable_declaration'] = /^\s*(static\s+)?(const\s+)?(int|char|float|double|long|short|unsigned|signed|void|bool)\s*(\*)?\s*([\w\u4e00-\u9fff]+)\s*[;=]/;
         
         // 函数调用（支持汉字变量名）
         this.patterns['function_call'] = /([\w\u4e00-\u9fff]+)\s*\(/;
@@ -348,6 +348,12 @@ export class CDetector {
             const match = line.match(pattern);
             if (match) {
                 const varName = match[1];
+                
+                // 跳过结构体成员声明
+                if (this.isStructMemberDeclaration(line)) {
+                    continue;
+                }
+                
                 const varState = this.variableStates.get(varName);
                 
                 if (varState && varState.type === 'pointer') {
@@ -376,28 +382,90 @@ export class CDetector {
             }
         }
     }
+    
+    private isStructMemberDeclaration(line: string): boolean {
+        // 检查是否是结构体成员声明
+        return line.match(/^\s*(int|char|float|double|long|short|unsigned|signed|void)\s*\*\s*\w+\s*;/) !== null;
+    }
 
     private processMemoryOperations(line: string, lineNum: number): void {
-        // 检测malloc/calloc/realloc
-        const allocMatch = line.match(/(\w+)\s*=\s*(malloc|calloc|realloc)\s*\(/);
-        if (allocMatch) {
-            const varName = allocMatch[1];
-            if (this.variableStates.has(varName)) {
+        // 检测malloc/calloc/realloc - 支持声明和赋值在同一行
+        const allocPatterns = [
+            /(\w+)\s*=\s*(malloc|calloc|realloc)\s*\(/,  // ptr = malloc(...)
+            /^\s*(int|char|float|double|long|short|unsigned|signed|void)\s*\*\s*(\w+)\s*=\s*(malloc|calloc|realloc)\s*\(/,  // int *ptr = malloc(...)
+            /^\s*(\w+)\s*\*\s*(\w+)\s*=\s*(malloc|calloc|realloc)\s*\(/,  // struct Data *ptr = malloc(...)
+            /(\w+)\[(\d+)\]\s*=\s*(malloc|calloc|realloc)\s*\(/,  // array[i] = malloc(...)
+            /(\w+)->(\w+)\s*=\s*(malloc|calloc|realloc)\s*\(/  // struct->member = malloc(...)
+        ];
+        
+        for (const pattern of allocPatterns) {
+            const match = line.match(pattern);
+            if (match) {
+                let varName: string;
+                
+                if (pattern.source.includes('\\*')) {
+                    // 声明和赋值在同一行
+                    varName = match[2];
+                } else if (pattern.source.includes('\\[')) {
+                    // 数组元素赋值
+                    varName = `${match[1]}[${match[2]}]`;
+                } else if (pattern.source.includes('->')) {
+                    // 结构体成员赋值
+                    varName = `${match[1]}->${match[2]}`;
+                } else {
+                    // 只有赋值
+                    varName = match[1];
+                }
+                
+                // 如果变量不存在，创建一个新的状态
+                if (!this.variableStates.has(varName)) {
+                    this.variableStates.set(varName, {
+                        name: varName,
+                        type: 'pointer',
+                        initialized: false,
+                        value: null,
+                        declaredAt: lineNum,
+                        lastAssignedAt: 0,
+                        scope: this.scopeLevel
+                    });
+                }
+                
                 const varState = this.variableStates.get(varName)!;
                 varState.initialized = true;
                 varState.value = 'malloc_result';
                 varState.lastAssignedAt = lineNum;
+                varState.type = 'pointer';
             }
         }
 
-        // 检测free调用
-        const freeMatch = line.match(/free\s*\(\s*(\w+)/);
-        if (freeMatch) {
-            const varName = freeMatch[1];
-            if (this.variableStates.has(varName)) {
-                const varState = this.variableStates.get(varName)!;
-                varState.value = 'freed';
-                varState.lastAssignedAt = lineNum;
+        // 检测free调用 - 支持更多模式
+        const freePatterns = [
+            /free\s*\(\s*(\w+)/,  // free(ptr)
+            /free\s*\(\s*(\w+)\[(\d+)\]/,  // free(array[i])
+            /free\s*\(\s*(\w+)->(\w+)/  // free(struct->member)
+        ];
+        
+        for (const pattern of freePatterns) {
+            const match = line.match(pattern);
+            if (match) {
+                let varName: string;
+                
+                if (pattern.source.includes('\\[')) {
+                    // 数组元素释放
+                    varName = `${match[1]}[${match[2]}]`;
+                } else if (pattern.source.includes('->')) {
+                    // 结构体成员释放
+                    varName = `${match[1]}->${match[2]}`;
+                } else {
+                    // 普通变量释放
+                    varName = match[1];
+                }
+                
+                if (this.variableStates.has(varName)) {
+                    const varState = this.variableStates.get(varName)!;
+                    varState.value = 'freed';
+                    varState.lastAssignedAt = lineNum;
+                }
             }
         }
 
@@ -420,16 +488,27 @@ export class CDetector {
                 varState.value === 'malloc_result' && 
                 varState.initialized) {
                 
-                // 检查是否有return语句包含该变量
+                // 检查是否有free调用
+                let hasFree = false;
                 let hasReturn = false;
+                
                 for (let i = varState.lastAssignedAt; i < lines.length; i++) {
-                    if (lines[i].includes('return') && lines[i].includes(varName)) {
+                    const line = lines[i];
+                    
+                    // 检查free调用 - 支持更多模式
+                    if (this.isFreeCall(line, varName)) {
+                        hasFree = true;
+                        break;
+                    }
+                    
+                    // 检查return语句
+                    if (line.includes('return') && line.includes(varName)) {
                         hasReturn = true;
                         break;
                     }
                 }
                 
-                if (!hasReturn) {
+                if (!hasFree && !hasReturn) {
                     reports.push({
                         line_number: varState.lastAssignedAt,
                         error_type: '内存泄漏',
@@ -443,12 +522,33 @@ export class CDetector {
             }
         }
     }
+    
+    private isFreeCall(line: string, varName: string): boolean {
+        // 检查是否是free调用，支持多种模式
+        const freePatterns = [
+            new RegExp(`free\\s*\\(\\s*${varName}\\s*\\)`),  // free(varName)
+            new RegExp(`free\\s*\\(\\s*${varName}\\[\\d+\\]\\s*\\)`),  // free(varName[i])
+            new RegExp(`free\\s*\\(\\s*${varName}->\\w+\\s*\\)`)  // free(varName->member)
+        ];
+        
+        for (const pattern of freePatterns) {
+            if (pattern.test(line)) {
+                return true;
+            }
+        }
+        
+        return false;
+    }
 
     private cleanupScopeVariables(): void {
-        // 清理当前作用域的变量
-        for (const [varName, varState] of this.variableStates) {
-            if (varState.scope > this.scopeLevel) {
-                this.variableStates.delete(varName);
+        // 改进的作用域清理逻辑
+        // 只清理比当前作用域层级更高的变量，但保留所有已分配内存的变量用于内存泄漏检测
+        if (this.scopeLevel > 0) {
+            for (const [varName, varState] of this.variableStates) {
+                // 如果变量作用域更高且不是内存分配变量，则清理
+                if (varState.scope > this.scopeLevel && varState.value !== 'malloc_result') {
+                    this.variableStates.delete(varName);
+                }
             }
         }
     }
@@ -499,7 +599,7 @@ export class CDetector {
             // 检测变量声明（排除函数定义中的参数）
             const declMatch = line.match(this.patterns['variable_declaration']);
             if (declMatch && !this.isFunctionDefinition(line)) {
-                const varName = declMatch[2];
+                const varName = declMatch[5]; // 第5个捕获组是变量名
                 const isInitialized = line.includes('=');
                 variables[varName] = {
                     declared: lineNum,
@@ -512,10 +612,9 @@ export class CDetector {
 
             // 检测变量使用（排除函数定义中的使用）
             for (const varName of Object.keys(variables)) {
-                if (line.includes(varName) && 
-                    !line.includes('=') && 
-                    !line.includes('int ') && 
-                    !line.includes('char ') &&
+                // 检查变量是否在行中被使用
+                const varUsed = this.isVariableUsed(line, varName);
+                if (varUsed && 
                     !this.isFunctionDefinition(line) &&
                     !this.isFunctionCall(line, varName)) {
                     variables[varName].used.push(lineNum);
@@ -541,6 +640,39 @@ export class CDetector {
         }
 
         return reports;
+    }
+
+    private isVariableUsed(line: string, varName: string): boolean {
+        // 检查变量是否在行中被使用
+        // 排除变量声明、赋值语句中的变量名
+        
+        // 如果行中包含变量名
+        if (!line.includes(varName)) {
+            return false;
+        }
+        
+        // 排除变量声明
+        if (line.match(new RegExp(`^\\s*(static\\s+)?(const\\s+)?(int|char|float|double|long|short|unsigned|signed|void|bool)\\s*(\\*)?\\s*${varName}\\s*[;=]`))) {
+            return false;
+        }
+        
+        // 排除赋值语句中的变量名（左侧）
+        if (line.match(new RegExp(`^\\s*${varName}\\s*=`))) {
+            return false;
+        }
+        
+        // 排除函数参数声明
+        if (line.match(new RegExp(`\\([^)]*\\b${varName}\\b[^)]*\\)`))) {
+            return false;
+        }
+        
+        // 排除函数调用中的变量名（作为函数名）
+        if (line.match(new RegExp(`^\\s*${varName}\\s*\\(`))) {
+            return false;
+        }
+        
+        // 其他情况认为是变量使用
+        return true;
     }
 
     private detectStandardLibrary(lines: string[], filePath: string): BugReport[] {
@@ -651,20 +783,493 @@ export class CDetector {
             }
 
             // 检测死循环
-            if (line.match(/while\s*\(\s*1\s*\)/) && !line.includes('break')) {
-                reports.push({
-                    line_number: lineNum,
-                    error_type: '死循环',
-                    severity: 'Warning',
-                    message: '检测到可能的死循环',
-                    suggestion: '添加break语句或修改循环条件',
-                    code_snippet: line.trim(),
-                    module_name: 'numeric_control_flow'
-                });
-            }
+            this.detectDeadLoops(line, lineNum, reports, lines);
         }
 
         return reports;
+    }
+
+    private detectDeadLoops(line: string, lineNum: number, reports: BugReport[], lines: string[]): void {
+        // 新的死循环检测逻辑：通过模拟执行循环代码来判断
+        
+        // 1. 检测for循环
+        const forMatch = line.match(/for\s*\(\s*([^;]*);\s*([^;]*);\s*([^)]*)\)/);
+        if (forMatch) {
+            const init = forMatch[1].trim();
+            const condition = forMatch[2].trim();
+            const increment = forMatch[3].trim();
+            
+            // 检查是否是明显的死循环
+            if (condition === '' || condition === '1' || condition === 'true') {
+                // 检查循环体内是否有break或return
+                if (!this.hasExitStatement(lines, lineNum, 20)) {
+                    reports.push({
+                        line_number: lineNum,
+                        error_type: '死循环',
+                        severity: 'Warning',
+                        message: '检测到for循环死循环',
+                        suggestion: '添加break语句或return语句',
+                        code_snippet: line.trim(),
+                        module_name: 'numeric_control_flow'
+                    });
+                }
+            } else {
+                // 模拟执行循环，检查是否会在合理次数内退出
+                if (this.simulateLoopExecution(init, condition, increment, lines, lineNum)) {
+                    reports.push({
+                        line_number: lineNum,
+                        error_type: '死循环',
+                        severity: 'Warning',
+                        message: '通过模拟执行检测到死循环',
+                        suggestion: '检查循环条件和增量',
+                        code_snippet: line.trim(),
+                        module_name: 'numeric_control_flow'
+                    });
+                }
+            }
+        }
+        
+        // 2. 检测while循环
+        const whileMatch = line.match(/while\s*\(\s*([^)]+)\s*\)/);
+        if (whileMatch) {
+            const condition = whileMatch[1].trim();
+            
+            // 检查是否是明显的死循环
+            if (condition === '1' || condition === 'true') {
+                // 检查循环体内是否有break或return
+                if (!this.hasExitStatement(lines, lineNum, 20)) {
+                    reports.push({
+                        line_number: lineNum,
+                        error_type: '死循环',
+                        severity: 'Warning',
+                        message: '检测到while(1)死循环',
+                        suggestion: '添加break语句或return语句',
+                        code_snippet: line.trim(),
+                        module_name: 'numeric_control_flow'
+                    });
+                }
+            } else {
+                // 模拟执行循环，检查是否会在合理次数内退出
+                if (this.simulateWhileLoop(condition, lines, lineNum)) {
+                    reports.push({
+                        line_number: lineNum,
+                        error_type: '死循环',
+                        severity: 'Warning',
+                        message: '通过模拟执行检测到while循环死循环',
+                        suggestion: '检查循环条件和循环体内的变量修改',
+                        code_snippet: line.trim(),
+                        module_name: 'numeric_control_flow'
+                    });
+                }
+            }
+        }
+        
+        // 3. 检测do-while循环
+        const doWhileMatch = line.match(/do\s*\{/);
+        if (doWhileMatch) {
+            // 查找对应的while条件
+            let whileLineNum = lineNum;
+            let braceCount = 0;
+            let foundWhile = false;
+            
+            for (let i = lineNum; i < Math.min(lineNum + 50, lines.length); i++) {
+                const currentLine = lines[i];
+                
+                // 计算大括号数量
+                for (const char of currentLine) {
+                    if (char === '{') braceCount++;
+                    if (char === '}') braceCount--;
+                }
+                
+                // 如果大括号平衡，说明找到了while条件
+                if (braceCount === 0 && currentLine.includes('while')) {
+                    whileLineNum = i;
+                    foundWhile = true;
+                    break;
+                }
+            }
+            
+            if (foundWhile) {
+                const whileConditionMatch = lines[whileLineNum].match(/while\s*\(\s*([^)]+)\s*\)/);
+                if (whileConditionMatch) {
+                    const condition = whileConditionMatch[1].trim();
+                    
+                    // 检查是否是明显的死循环
+                    if (condition === '1' || condition === 'true') {
+                        // 检查循环体内是否有break或return
+                        if (!this.hasExitStatement(lines, lineNum, 20)) {
+                            reports.push({
+                                line_number: lineNum,
+                                error_type: '死循环',
+                                severity: 'Warning',
+                                message: '检测到do-while循环死循环',
+                                suggestion: '添加break语句或return语句',
+                                code_snippet: line.trim(),
+                                module_name: 'numeric_control_flow'
+                            });
+                        }
+                    } else {
+                        // 模拟执行循环，检查是否会在合理次数内退出
+                        if (this.simulateWhileLoop(condition, lines, lineNum)) {
+                            reports.push({
+                                line_number: lineNum,
+                                error_type: '死循环',
+                                severity: 'Warning',
+                                message: '通过模拟执行检测到do-while循环死循环',
+                                suggestion: '检查循环条件和循环体内的变量修改',
+                                code_snippet: line.trim(),
+                                module_name: 'numeric_control_flow'
+                            });
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    private hasExitStatement(lines: string[], startLine: number, maxLines: number): boolean {
+        // 检查循环体内是否有break或return语句
+        for (let i = startLine; i < Math.min(startLine + maxLines, lines.length); i++) {
+            const line = lines[i];
+            if (line.includes('break') || line.includes('return')) {
+                return true;
+            }
+            if (line.includes('}')) {
+                break;
+            }
+        }
+        return false;
+    }
+    
+    private simulateLoopExecution(init: string, condition: string, increment: string, lines: string[], lineNum: number): boolean {
+        // 模拟执行for循环，最多执行100000次
+        const maxIterations = 100000;
+        
+        try {
+            // 解析初始化语句
+            const initValue = this.parseInitialization(init);
+            if (initValue === null) return false;
+            
+            // 解析条件语句
+            const conditionExpr = this.parseCondition(condition);
+            if (conditionExpr === null) return false;
+            
+            // 解析增量语句
+            const incrementExpr = this.parseIncrement(increment);
+            if (incrementExpr === null) return false;
+            
+            // 检查是否有break或return（简化检查）
+            if (this.hasExitStatement(lines, lineNum, 20)) {
+                return false; // 有退出语句，不是死循环
+            }
+            
+            // 分析跳出条件是否可达
+            if (this.isExitConditionUnreachable(initValue.value, conditionExpr, incrementExpr)) {
+                return true; // 跳出条件不可达，是死循环
+            }
+            
+            // 模拟执行
+            let currentValue = initValue.value;
+            let iterations = 0;
+            
+            while (iterations < maxIterations) {
+                // 检查条件
+                if (!this.evaluateCondition(currentValue, conditionExpr)) {
+                    return false; // 循环会退出，不是死循环
+                }
+                
+                // 执行增量
+                currentValue = this.applyIncrement(currentValue, incrementExpr);
+                iterations++;
+            }
+            
+            return true; // 执行了maxIterations次仍未退出，是死循环
+            
+        } catch (error) {
+            // 解析失败，使用简单的启发式方法
+            return this.simpleDeadLoopCheck(init, condition, increment);
+        }
+    }
+    
+    private simulateWhileLoop(condition: string, lines: string[], lineNum: number): boolean {
+        // 模拟执行while循环，最多执行100000次
+        const maxIterations = 100000;
+        
+        try {
+            // 解析条件语句
+            const conditionExpr = this.parseCondition(condition);
+            if (conditionExpr === null) return false;
+            
+            // 检查是否有break或return
+            if (this.hasExitStatement(lines, lineNum, 20)) {
+                return false;
+            }
+            
+            // 简化的模拟：如果条件总是为真且没有退出机制，就是死循环
+            if (condition === '1' || condition === 'true') {
+                return true;
+            }
+            
+            // 分析循环体内的变量修改情况
+            const loopBodyAnalysis = this.analyzeLoopBody(lines, lineNum, conditionExpr.variable);
+            
+            // 如果循环变量在循环体内从未被修改，且条件总是为真，则是死循环
+            if (!loopBodyAnalysis.hasVariableModification && this.isConditionAlwaysTrue(conditionExpr)) {
+                return true;
+            }
+            
+            // 如果循环变量被赋值为自己，且没有其他修改，则是死循环
+            if (loopBodyAnalysis.hasSelfAssignment && !loopBodyAnalysis.hasOtherModification) {
+                return true;
+            }
+            
+            // 如果循环变量依赖于外部变量，且外部变量从未被修改，则是死循环
+            if (loopBodyAnalysis.dependsOnExternalVariable && !loopBodyAnalysis.hasExternalModification) {
+                return true;
+            }
+            
+            return false;
+            
+        } catch (error) {
+            return false;
+        }
+    }
+    
+    private analyzeLoopBody(lines: string[], startLine: number, variableName: string): {
+        hasVariableModification: boolean,
+        hasSelfAssignment: boolean,
+        hasOtherModification: boolean,
+        dependsOnExternalVariable: boolean,
+        hasExternalModification: boolean
+    } {
+        let hasVariableModification = false;
+        let hasSelfAssignment = false;
+        let hasOtherModification = false;
+        let dependsOnExternalVariable = false;
+        let hasExternalModification = false;
+        
+        // 分析循环体（最多20行）
+        for (let i = startLine; i < Math.min(startLine + 20, lines.length); i++) {
+            const line = lines[i];
+            
+            // 如果遇到结束大括号，停止分析
+            if (line.includes('}')) {
+                break;
+            }
+            
+            // 检查变量修改
+            if (line.includes(`${variableName} =`)) {
+                hasVariableModification = true;
+                
+                // 检查是否是自赋值
+                if (line.includes(`${variableName} = ${variableName}`)) {
+                    hasSelfAssignment = true;
+                } else {
+                    hasOtherModification = true;
+                }
+            }
+            
+            // 检查递增递减
+            if (line.includes(`${variableName}++`) || line.includes(`${variableName}--`) ||
+                line.includes(`${variableName} +=`) || line.includes(`${variableName} -=`)) {
+                hasVariableModification = true;
+                hasOtherModification = true;
+            }
+            
+            // 检查是否依赖外部变量
+            if (line.includes('=') && !line.includes(variableName)) {
+                // 检查是否有其他变量的赋值
+                const otherVarMatch = line.match(/(\w+)\s*=/);
+                if (otherVarMatch && otherVarMatch[1] !== variableName) {
+                    dependsOnExternalVariable = true;
+                    hasExternalModification = true;
+                }
+            }
+        }
+        
+        return {
+            hasVariableModification,
+            hasSelfAssignment,
+            hasOtherModification,
+            dependsOnExternalVariable,
+            hasExternalModification
+        };
+    }
+    
+    private isConditionAlwaysTrue(condition: { variable: string, operator: string, value: number }): boolean {
+        // 判断条件是否总是为真
+        const operator = condition.operator;
+        const value = condition.value;
+        
+        // 一些明显总是为真的条件
+        if (operator === '>=' && value <= 0) return true;
+        if (operator === '>' && value < 0) return true;
+        if (operator === '!=' && value === 0) return true;
+        
+        return false;
+    }
+    
+    private parseInitialization(init: string): { value: number } | null {
+        // 解析初始化语句，如 "int i = 10" 或 "i = 10"
+        const match = init.match(/(\w+)\s*=\s*(\d+)/);
+        if (match) {
+            return { value: parseInt(match[2]) };
+        }
+        return null;
+    }
+    
+    private parseCondition(condition: string): { variable: string, operator: string, value: number } | null {
+        // 解析条件语句，如 "i < 10" 或 "i >= 10"
+        const match = condition.match(/(\w+)\s*([><=!]+)\s*(\d+)/);
+        if (match) {
+            return {
+                variable: match[1],
+                operator: match[2],
+                value: parseInt(match[3])
+            };
+        }
+        return null;
+    }
+    
+    private parseIncrement(increment: string): { variable: string, operation: string, value: number } | null {
+        // 解析增量语句，如 "i++" 或 "i += 3"
+        const match = increment.match(/(\w+)\s*([+-])\s*=\s*(\d+)/);
+        if (match) {
+            return {
+                variable: match[1],
+                operation: match[2],
+                value: parseInt(match[3])
+            };
+        }
+        
+        // 处理 i++ 或 i--
+        const simpleMatch = increment.match(/(\w+)\s*([+-])\s*([+-])/);
+        if (simpleMatch) {
+            return {
+                variable: simpleMatch[1],
+                operation: simpleMatch[2],
+                value: 1
+            };
+        }
+        
+        return null;
+    }
+    
+    private evaluateCondition(currentValue: number, condition: { variable: string, operator: string, value: number }): boolean {
+        // 评估条件表达式
+        switch (condition.operator) {
+            case '<': return currentValue < condition.value;
+            case '>': return currentValue > condition.value;
+            case '<=': return currentValue <= condition.value;
+            case '>=': return currentValue >= condition.value;
+            case '==': return currentValue === condition.value;
+            case '!=': return currentValue !== condition.value;
+            default: return true;
+        }
+    }
+    
+    private applyIncrement(currentValue: number, increment: { variable: string, operation: string, value: number }): number {
+        // 应用增量操作
+        if (increment.operation === '+') {
+            return currentValue + increment.value;
+        } else {
+            return currentValue - increment.value;
+        }
+    }
+    
+    private simpleDeadLoopCheck(init: string, condition: string, increment: string): boolean {
+        // 简化的死循环检查，用于解析失败的情况
+        const initMatch = init.match(/(\w+)\s*=\s*(\d+)/);
+        const conditionMatch = condition.match(/(\w+)\s*([><=!]+)\s*(\d+)/);
+        const incrementMatch = increment.match(/(\w+)\s*([+-])\s*=\s*(\d+)/);
+        
+        if (initMatch && conditionMatch && incrementMatch) {
+            const initValue = parseInt(initMatch[2]);
+            const operator = conditionMatch[2];
+            const conditionValue = parseInt(conditionMatch[3]);
+            const incOp = incrementMatch[2];
+            const incValue = parseInt(incrementMatch[3]);
+            
+            return this.isDeadLoopCondition(initValue, operator, conditionValue, incOp, incValue);
+        }
+        
+        return false;
+    }
+    
+    private isExitConditionUnreachable(initValue: number, condition: { variable: string, operator: string, value: number }, increment: { variable: string, operation: string, value: number }): boolean {
+        // 分析跳出条件是否可达
+        // 跳出条件：当条件为false时循环退出
+        
+        const operator = condition.operator;
+        const conditionValue = condition.value;
+        const incOp = increment.operation;
+        const incValue = increment.value;
+        
+        // 1. 步长过大检测：i == 10, i += 3
+        if (operator === '==' && incOp === '+') {
+            // 检查是否能达到目标值
+            if (initValue < conditionValue) {
+                // 计算需要多少次迭代才能达到目标值
+                const stepsNeeded = conditionValue - initValue;
+                if (stepsNeeded % incValue !== 0) {
+                    return true; // 步长过大，永远达不到目标值
+                }
+            } else if (initValue > conditionValue) {
+                // 初始值已经大于目标值，且还在增加
+                return true; // 永远达不到目标值
+            }
+        }
+        
+        // 2. 循环条件错误检测
+        if (operator === '>=' && incOp === '+') {
+            // 例如: i >= 10, i++ - 如果i从10开始，永远不会小于10
+            return initValue >= conditionValue;
+        }
+        
+        if (operator === '<' && incOp === '-') {
+            // 例如: i < 10, i-- - 如果i从0开始，永远不会大于等于10
+            return initValue < conditionValue;
+        }
+        
+        if (operator === '>' && incOp === '-') {
+            // 例如: i > 10, i-- - 如果i从0开始，永远不会大于10
+            return initValue <= conditionValue;
+        }
+        
+        if (operator === '<=' && incOp === '+') {
+            // 例如: i <= 10, i++ - 如果i从10开始，永远不会小于等于10
+            return initValue > conditionValue;
+        }
+        
+        // 3. 浮点数精度问题检测
+        if (operator === '!=' && incOp === '+') {
+            // 例如: f != 1.0f, f += 0.1f - 浮点数精度问题
+            return true; // 浮点数比较通常有问题
+        }
+        
+        return false;
+    }
+    
+    private isDeadLoopCondition(initValue: number, operator: string, conditionValue: number, incOp: string, incValue: number): boolean {
+        // 简化的死循环检测逻辑
+        // 这里只检测一些明显的情况
+        
+        if (operator === '>=' && incOp === '+') {
+            // 例如: i >= 10, i++ - 如果i从10开始，永远不会小于10
+            return initValue >= conditionValue;
+        }
+        
+        if (operator === '<' && incOp === '-') {
+            // 例如: i < 10, i-- - 如果i从0开始，永远不会大于等于10
+            return initValue < conditionValue;
+        }
+        
+        if (operator === '==' && incOp === '+') {
+            // 例如: i == 10, i += 3 - 如果i从0开始，会跳过10
+            return initValue < conditionValue && (conditionValue - initValue) % incValue !== 0;
+        }
+        
+        return false;
     }
 
     private isFunctionParameter(line: string): boolean {

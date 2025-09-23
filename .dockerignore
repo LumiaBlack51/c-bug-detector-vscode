@@ -1,0 +1,49 @@
+# 忽略文件
+node_modules
+npm-debug.log
+.git
+.gitignore
+README.md
+.env
+.nyc_output
+coverage
+.vscode
+.idea
+
+# 忽略Python缓存
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.Python
+env
+pip-log.txt
+pip-delete-this-directory.txt
+.tox
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.log
+.git
+.mypy_cache
+.pytest_cache
+.hypothesis
+
+# 忽略构建产物
+dist
+build
+*.egg-info
+
+# 忽略测试文件
+tests
+test_*.js
+debug_*.js
+
+# 忽略临时文件
+*.tmp
+*.temp
+.DS_Store
+Thumbs.db
