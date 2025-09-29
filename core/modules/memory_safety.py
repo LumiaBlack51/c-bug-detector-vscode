@@ -63,6 +63,15 @@ class MemorySafetyModule:
                     malloc_call['line_content']
                 )
         
+        # 检测循环中的内存泄漏
+        self._detect_loop_memory_leaks(parsed_data)
+        
+        # 检测嵌套函数中的内存泄漏
+        self._detect_nested_function_memory_leaks(parsed_data)
+        
+        # 检测realloc后的内存泄漏
+        self._detect_realloc_memory_leaks(parsed_data)
+        
         # 检查每个malloc的变量是否都有对应的free
         for var_name in self.malloced_variables:
             if var_name not in self.freed_variables:
@@ -222,6 +231,74 @@ class MemorySafetyModule:
                                 line_content
                             )
                         break
+    
+    def _detect_loop_memory_leaks(self, parsed_data: Dict[str, List]):
+        """检测循环中的内存泄漏"""
+        for line_num, line_content in enumerate(parsed_data['lines'], 1):
+            # 检测for循环中的malloc
+            if 'for' in line_content and 'malloc' in line_content:
+                # 查找循环中的malloc调用
+                malloc_match = self.patterns['malloc'].search(line_content)
+                if malloc_match:
+                    var_name = malloc_match.group(1)
+                    self.error_reporter.add_memory_error(
+                        line_num,
+                        f"变量 '{var_name}' 在循环中分配内存但未释放，可能导致循环内存泄漏",
+                        "建议在循环内或循环后释放内存：free(var_name);",
+                        line_content
+                    )
+    
+    def _detect_nested_function_memory_leaks(self, parsed_data: Dict[str, List]):
+        """检测嵌套函数中的内存泄漏"""
+        # 检测函数内部定义的函数中的malloc
+        in_nested_function = False
+        for line_num, line_content in enumerate(parsed_data['lines'], 1):
+            # 检测嵌套函数开始
+            if 'void' in line_content and '(' in line_content and '{' in line_content:
+                in_nested_function = True
+                continue
+            
+            # 检测嵌套函数结束
+            if in_nested_function and line_content.strip() == '}':
+                in_nested_function = False
+                continue
+            
+            # 在嵌套函数中检测malloc
+            if in_nested_function and 'malloc' in line_content:
+                malloc_match = self.patterns['malloc'].search(line_content)
+                if malloc_match:
+                    var_name = malloc_match.group(1)
+                    self.error_reporter.add_memory_error(
+                        line_num,
+                        f"变量 '{var_name}' 在嵌套函数中分配内存但未释放",
+                        "建议在函数结束前释放内存：free(var_name);",
+                        line_content
+                    )
+    
+    def _detect_realloc_memory_leaks(self, parsed_data: Dict[str, List]):
+        """检测realloc后的内存泄漏"""
+        for line_num, line_content in enumerate(parsed_data['lines'], 1):
+            if 'realloc' in line_content:
+                # 检测realloc调用
+                realloc_match = re.search(r'(\w+)\s*=\s*realloc\s*\(', line_content)
+                if realloc_match:
+                    var_name = realloc_match.group(1)
+                    # 检查后续是否有free
+                    has_free = False
+                    for i in range(line_num, min(line_num + 20, len(parsed_data['lines']))):
+                        if i < len(parsed_data['lines']):
+                            future_line = parsed_data['lines'][i]
+                            if f'free({var_name})' in future_line:
+                                has_free = True
+                                break
+                    
+                    if not has_free:
+                        self.error_reporter.add_memory_error(
+                            line_num,
+                            f"变量 '{var_name}' 通过realloc重新分配内存但未释放",
+                            "建议在适当位置释放realloc后的内存：free(var_name);",
+                            line_content
+                        )
     
     def get_module_name(self) -> str:
         """获取模块名称"""

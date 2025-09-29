@@ -278,7 +278,7 @@ def main():
         reports = detector.analyze_file(args.input)
         
         if reports:
-            print(f"\n{Fore.YELLOW}📊 检测完成，共发现 {len(reports)} 个问题{Style.RESET_ALL}")
+            print(f"\n{Fore.YELLOW}[INFO] 检测完成，共发现 {len(reports)} 个问题{Style.RESET_ALL}")
             print(detector.generate_report(reports, args.format))
             
             if args.output:

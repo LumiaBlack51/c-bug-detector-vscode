@@ -555,7 +555,13 @@ class StandardLibraryModule:
         """推断参数类型"""
         # 检查是否是已知变量
         if param in self._global_variables:
-            param_type = self._global_variables[param]['type']
+            var_info = self._global_variables[param]
+            param_type = var_info['type']
+            
+            # 如果是指针类型，添加*后缀
+            if var_info.get('is_pointer', False) and not param_type.endswith('*'):
+                param_type += '*'
+            
             return param_type
         
         # 检查是否是字面量

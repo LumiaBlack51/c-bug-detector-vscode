@@ -274,6 +274,12 @@ class VariableStateModule:
                 print(f"[C AST DEBUG] 跳过const变量: {var_name}")
                 return
             
+            # 跳过指针类型变量（可能通过malloc等函数初始化）
+            var_type = var_state.get('type', '')
+            if '*' in var_type or 'pointer' in var_type.lower():
+                print(f"[C AST DEBUG] 跳过指针变量: {var_name} (类型: {var_type})")
+                return
+            
             # 检查是否未初始化
             if not var_state['is_initialized']:
                 print(f"[C AST DEBUG] 检测到未初始化变量使用: {var_name}")
@@ -292,6 +298,7 @@ class VariableStateModule:
             # 更新变量状态为已初始化
             if var_name in self.variable_states:
                 self.variable_states[var_name]['is_initialized'] = True
+                print(f"[C AST DEBUG] 变量 {var_name} 通过赋值初始化")
     
     def _detect_uninitialized_variables(self, parsed_data: Dict[str, List]):
         """检测未初始化变量使用"""

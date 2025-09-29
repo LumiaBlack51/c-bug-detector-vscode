@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
 import * as fs from 'fs';
+import { spawn } from 'child_process';
 import { CDetector, BugReport, AnalysisResult } from './cDetector';
 
 export { BugReport, AnalysisResult };
@@ -41,8 +42,8 @@ export class BugDetectorBackend {
                 };
             }
 
-            // 使用TypeScript检测器
-            const result = this.detector.analyzeFile(filePath);
+            // 使用Python后端检测器
+            const result = await this.analyzeWithPythonBackend(filePath);
             return result;
         } catch (error) {
             return {
@@ -143,6 +144,137 @@ export class BugDetectorBackend {
 
         await findFiles(rootPath);
         return cFiles;
+    }
+
+    private async analyzeWithPythonBackend(filePath: string): Promise<AnalysisResult> {
+        return new Promise((resolve) => {
+            try {
+                // 获取Python路径和后端路径
+                const pythonPath = this.config.get('pythonPath', 'python');
+                const backendPath = this.config.get('backendPath', 'backend/main.py');
+                
+                // 构建后端脚本的完整路径
+                const extensionPath = path.dirname(__filename);
+                const fullBackendPath = path.join(extensionPath, '..', backendPath);
+                
+                console.log(`[Backend] 使用Python路径: ${pythonPath}`);
+                console.log(`[Backend] 使用后端路径: ${fullBackendPath}`);
+                console.log(`[Backend] 分析文件: ${filePath}`);
+                
+                // 调用Python后端
+                const pythonProcess = spawn(pythonPath, [fullBackendPath, filePath], {
+                    cwd: path.dirname(fullBackendPath)
+                });
+                
+                let stdout = '';
+                let stderr = '';
+                
+                pythonProcess.stdout.on('data', (data) => {
+                    stdout += data.toString();
+                });
+                
+                pythonProcess.stderr.on('data', (data) => {
+                    stderr += data.toString();
+                });
+                
+                pythonProcess.on('close', (code) => {
+                    console.log(`[Backend] Python进程退出，代码: ${code}`);
+                    console.log(`[Backend] 标准输出: ${stdout}`);
+                    if (stderr) {
+                        console.log(`[Backend] 错误输出: ${stderr}`);
+                    }
+                    
+                    if (code === 0) {
+                        // 解析Python后端的输出
+                        const reports = this.parsePythonOutput(stdout);
+                        resolve({
+                            file_path: filePath,
+                            reports: reports,
+                            success: true
+                        });
+                    } else {
+                        resolve({
+                            file_path: filePath,
+                            reports: [],
+                            success: false,
+                            error: `Python后端执行失败: ${stderr || stdout}`
+                        });
+                    }
+                });
+                
+                pythonProcess.on('error', (error) => {
+                    console.error(`[Backend] Python进程错误: ${error}`);
+                    resolve({
+                        file_path: filePath,
+                        reports: [],
+                        success: false,
+                        error: `无法启动Python后端: ${error.message}`
+                    });
+                });
+                
+            } catch (error) {
+                console.error(`[Backend] 分析文件时出错: ${error}`);
+                resolve({
+                    file_path: filePath,
+                    reports: [],
+                    success: false,
+                    error: `分析失败: ${error}`
+                });
+            }
+        });
+    }
+    
+    private parsePythonOutput(output: string): BugReport[] {
+        const reports: BugReport[] = [];
+        
+        try {
+            // 解析Python后端的文本输出
+            const lines = output.split('\n');
+            let currentReport: Partial<BugReport> | null = null;
+            
+            for (const line of lines) {
+                if (line.includes('[检测]') && line.includes('检测到问题')) {
+                    // 开始新的报告
+                    if (currentReport) {
+                        reports.push(currentReport as BugReport);
+                    }
+                    currentReport = {
+                        module_name: this.extractModuleName(line)
+                    };
+                } else if (currentReport && line.includes('[位置]')) {
+                    const match = line.match(/第\s*(\d+)\s*行/);
+                    if (match) {
+                        currentReport.line_number = parseInt(match[1]);
+                    }
+                } else if (currentReport && line.includes('[警告]')) {
+                    const match = line.match(/类型：([^-]+)\s*-\s*(.+)/);
+                    if (match) {
+                        currentReport.error_type = match[1].trim();
+                        currentReport.severity = match[2].trim();
+                    }
+                } else if (currentReport && line.includes('[问题]')) {
+                    currentReport.message = line.replace('[问题]', '').trim();
+                } else if (currentReport && line.includes('[建议]')) {
+                    currentReport.suggestion = line.replace('[建议]', '').trim();
+                    currentReport.code_snippet = '';
+                }
+            }
+            
+            // 添加最后一个报告
+            if (currentReport) {
+                reports.push(currentReport as BugReport);
+            }
+            
+        } catch (error) {
+            console.error(`[Backend] 解析Python输出时出错: ${error}`);
+        }
+        
+        return reports;
+    }
+    
+    private extractModuleName(line: string): string {
+        const match = line.match(/\[检测\]\s*([^检测到问题]+)/);
+        return match ? match[1].trim() : '未知模块';
     }
 
     public dispose(): void {
