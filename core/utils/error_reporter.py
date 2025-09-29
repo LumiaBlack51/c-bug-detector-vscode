@@ -61,6 +61,19 @@ class ErrorReporter:
         report = BugReport(
             line_number=line_num,
             error_type=ErrorType.VARIABLE_STATE,
+            severity=Severity.ERROR,
+            message=message,
+            suggestion=suggestion,
+            code_snippet=code_snippet,
+            module_name="变量状态监察官"
+        )
+        self.add_report(report)
+    
+    def add_variable_warning(self, line_num: int, message: str, suggestion: str, code_snippet: str = ""):
+        """添加变量状态警告"""
+        report = BugReport(
+            line_number=line_num,
+            error_type=ErrorType.VARIABLE_STATE,
             severity=Severity.WARNING,
             message=message,
             suggestion=suggestion,

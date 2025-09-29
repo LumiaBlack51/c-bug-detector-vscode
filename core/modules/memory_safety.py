@@ -116,11 +116,27 @@ class MemorySafetyModule:
                         )
     
     def _detect_null_pointer_dereference(self, parsed_data: Dict[str, List]):
-        """检测空指针解引用"""
+        """检测空指针解引用 - 改进版本"""
         # 检查指针解引用前是否有NULL检查
         for deref in parsed_data['pointer_dereferences']:
             ptr_name = deref['pointer']
             line_num = deref['line']
+            line_content = deref['line_content']
+            
+            # 跳过指针初始化，只检查真正的解引用
+            if self._is_pointer_initialization(line_content):
+                print(f"[内存安全DEBUG] 跳过指针初始化: {line_content}")
+                continue
+            
+            # 检查是否是真正的指针解引用
+            if not self._is_real_pointer_dereference(line_content):
+                print(f"[内存安全DEBUG] 跳过非解引用: {line_content}")
+                continue
+            
+            # 跳过函数参数的解引用（减少误报）
+            if self._is_function_parameter(ptr_name, parsed_data):
+                print(f"[内存安全DEBUG] 跳过函数参数解引用: {ptr_name}")
+                continue
             
             # 检查前面几行是否有NULL检查
             has_null_check = False
@@ -136,8 +152,55 @@ class MemorySafetyModule:
                     line_num,
                     f"解引用指针 '{ptr_name}' 前未进行NULL检查",
                     "建议添加NULL检查：if (ptr != NULL) { /* 使用ptr */ }",
-                    deref['line_content']
+                    line_content
                 )
+    
+    def _is_function_parameter(self, ptr_name: str, parsed_data: Dict[str, List]) -> bool:
+        """检查指针是否是函数参数"""
+        # 遍历所有函数定义，检查参数列表
+        for line_num, line_content in enumerate(parsed_data['lines'], 1):
+            # 查找函数定义
+            func_match = re.search(r'\w+\s+(\w+)\s*\(([^)]*)\)', line_content)
+            if func_match:
+                func_name = func_match.group(1)
+                params_str = func_match.group(2)
+                
+                # 检查参数列表中是否包含该指针
+                if ptr_name in params_str:
+                    # 进一步验证是否真的是参数名（而不是类型名）
+                    param_pattern = rf'\b{ptr_name}\b'
+                    if re.search(param_pattern, params_str):
+                        return True
+        
+        return False
+    
+    def _is_pointer_initialization(self, line_content: str) -> bool:
+        """检查是否是指针初始化"""
+        # 检查是否是声明和初始化：int *ptr = &x;
+        if re.search(r'\*\s*\w+\s*=\s*&', line_content):
+            return True
+        
+        # 检查是否是字符串字面量初始化：const char *str = "hello";
+        if re.search(r'\*\s*\w+\s*=\s*"[^"]*"', line_content):
+            return True
+        
+        # 检查是否是malloc初始化：int *ptr = malloc(size);
+        if re.search(r'\*\s*\w+\s*=\s*malloc', line_content):
+            return True
+        
+        return False
+    
+    def _is_real_pointer_dereference(self, line_content: str) -> bool:
+        """检查是否是真正的指针解引用"""
+        # 检查是否是解引用操作：*ptr = value; 或 value = *ptr;
+        if re.search(r'\*\s*\w+\s*[=<>!]', line_content) or re.search(r'[=<>!]\s*\*\s*\w+', line_content):
+            return True
+        
+        # 检查是否是函数调用中的解引用：func(*ptr)
+        if re.search(r'\(\s*\*\s*\w+\s*\)', line_content):
+            return True
+        
+        return False
     
     def _detect_return_local_pointer(self, parsed_data: Dict[str, List]):
         """检测函数返回局部指针"""

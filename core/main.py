@@ -14,6 +14,8 @@ init()
 # 导入检测模块
 from modules.memory_safety import MemorySafetyModule
 from modules.variable_state import VariableStateModule
+from modules.variable_state_improved import ImprovedVariableStateModule
+from modules.memory_safety_improved import ImprovedMemorySafetyModule
 from modules.standard_library import StandardLibraryModule
 from modules.numeric_control_flow import NumericControlFlowModule
 
@@ -31,8 +33,8 @@ class CBugDetector:
         
         # 初始化所有检测模块
         self.modules = {
-            'memory_safety': MemorySafetyModule(),
-            'variable_state': VariableStateModule(),
+            'memory_safety': ImprovedMemorySafetyModule(),
+            'variable_state': ImprovedVariableStateModule(),
             'standard_library': StandardLibraryModule(),
             'numeric_control_flow': NumericControlFlowModule(),
         }
@@ -47,43 +49,114 @@ class CBugDetector:
     
     def analyze_file(self, file_path: str) -> List[BugReport]:
         """分析单个C文件"""
-        print(f"{Fore.CYAN}🔍 正在分析文件: {file_path}{Style.RESET_ALL}")
+        print(f"{Fore.CYAN}正在分析文件: {file_path}{Style.RESET_ALL}")
         
         # 检查文件是否存在
         if not os.path.exists(file_path):
-            print(f"{Fore.RED}❌ 错误: 文件 {file_path} 不存在{Style.RESET_ALL}")
+            print(f"{Fore.RED}错误: 文件 {file_path} 不存在{Style.RESET_ALL}")
             return []
         
         # 检查文件扩展名
         if not file_path.endswith('.c'):
-            print(f"{Fore.YELLOW}⚠️  警告: 文件 {file_path} 不是C文件(.c){Style.RESET_ALL}")
+            print(f"{Fore.YELLOW}警告: 文件 {file_path} 不是C文件(.c){Style.RESET_ALL}")
         
         try:
             # 解析C代码
             parsed_data = self.parser.parse_file(file_path)
             if not parsed_data:
-                print(f"{Fore.RED}❌ 错误: 无法解析文件 {file_path}{Style.RESET_ALL}")
+                print(f"{Fore.RED}错误: 无法解析文件 {file_path}{Style.RESET_ALL}")
                 return []
             
             # 清空之前的报告
             self.error_reporter.clear_reports()
             
-            # 运行所有启用的模块
+            # 运行所有启用的模块并收集报告
+            all_reports = []
             for module_name, module in self.modules.items():
                 if self.module_enabled[module_name]:
-                    print(f"{Fore.GREEN}📋 运行模块: {module.get_module_name()}{Style.RESET_ALL}")
+                    print(f"{Fore.GREEN}运行模块: {module.get_module_name()}{Style.RESET_ALL}")
                     try:
                         reports = module.analyze(parsed_data)
-                        for report in reports:
-                            self.error_reporter.add_report(report)
+                        all_reports.extend(reports)
                     except Exception as e:
-                        print(f"{Fore.RED}❌ 模块 {module_name} 运行出错: {e}{Style.RESET_ALL}")
+                        print(f"{Fore.RED}模块 {module_name} 运行出错: {e}{Style.RESET_ALL}")
             
-            return self.error_reporter.get_reports()
+            # 去重处理
+            deduplicated_reports = self._deduplicate_reports(all_reports)
+            
+            # 添加到错误报告器
+            for report in deduplicated_reports:
+                self.error_reporter.add_report(report)
+            
+            return deduplicated_reports
             
         except Exception as e:
-            print(f"{Fore.RED}❌ 分析文件时出错: {e}{Style.RESET_ALL}")
+            print(f"{Fore.RED}分析文件时出错: {e}{Style.RESET_ALL}")
             return []
+    
+    def _deduplicate_reports(self, reports: List[BugReport]) -> List[BugReport]:
+        """去重报告 - 消除来自不同模块的重复报告"""
+        if not reports:
+            return []
+        
+        # 使用字典来跟踪已见过的报告
+        seen_reports = {}
+        deduplicated = []
+        
+        for report in reports:
+            # 创建报告的唯一标识符：行号 + 问题类型 + 变量名
+            # 提取变量名（从消息中提取）
+            var_name = self._extract_variable_name(report.message)
+            report_key = f"{report.line_number}_{report.error_type.value}_{var_name}"
+            
+            if report_key not in seen_reports:
+                seen_reports[report_key] = report
+                deduplicated.append(report)
+            else:
+                # 如果发现重复，选择更具体的报告（通常是内存安全卫士的报告）
+                existing_report = seen_reports[report_key]
+                if self._is_more_specific_report(report, existing_report):
+                    # 替换现有报告
+                    deduplicated.remove(existing_report)
+                    deduplicated.append(report)
+                    seen_reports[report_key] = report
+        
+        return deduplicated
+    
+    def _extract_variable_name(self, message: str) -> str:
+        """从错误消息中提取变量名"""
+        import re
+        
+        # 匹配 "变量 'xxx' 在初始化前被使用" 或 "解引用未初始化指针 'xxx'"
+        patterns = [
+            r"变量 '([^']+)'",
+            r"指针 '([^']+)'",
+            r"解引用未初始化指针 '([^']+)'",
+            r"未初始化指针 '([^']+)'",
+            r"未声明指针 '([^']+)'"
+        ]
+        
+        for pattern in patterns:
+            match = re.search(pattern, message)
+            if match:
+                return match.group(1)
+        
+        return ""
+    
+    def _is_more_specific_report(self, report1: BugReport, report2: BugReport) -> bool:
+        """判断哪个报告更具体"""
+        # 内存安全卫士的报告通常比变量状态监察官的报告更具体
+        if "内存安全卫士" in report1.module_name and "变量状态监察官" in report2.module_name:
+            return True
+        elif "变量状态监察官" in report1.module_name and "内存安全卫士" in report2.module_name:
+            return False
+        
+        # 如果消息长度不同，选择更长的（通常更具体）
+        if len(report1.message) != len(report2.message):
+            return len(report1.message) > len(report2.message)
+        
+        # 默认选择第一个
+        return False
     
     def analyze_directory(self, directory_path: str) -> Dict[str, List[BugReport]]:
         """分析目录中的所有C文件"""
