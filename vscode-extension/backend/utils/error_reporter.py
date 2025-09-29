@@ -61,6 +61,19 @@ class ErrorReporter:
         report = BugReport(
             line_number=line_num,
             error_type=ErrorType.VARIABLE_STATE,
+            severity=Severity.ERROR,
+            message=message,
+            suggestion=suggestion,
+            code_snippet=code_snippet,
+            module_name="变量状态监察官"
+        )
+        self.add_report(report)
+    
+    def add_variable_warning(self, line_num: int, message: str, suggestion: str, code_snippet: str = ""):
+        """添加变量状态警告"""
+        report = BugReport(
+            line_number=line_num,
+            error_type=ErrorType.VARIABLE_STATE,
             severity=Severity.WARNING,
             message=message,
             suggestion=suggestion,
@@ -121,9 +134,9 @@ class ErrorReporter:
     def format_all_reports(self) -> str:
         """格式化所有报告"""
         if not self.reports:
-            return "[SUCCESS] 恭喜！没有发现任何问题。"
+            return "[成功] 恭喜！没有发现任何问题。"
         
-        result = f"[INFO] 检测完成，共发现 {len(self.reports)} 个问题：\n"
+        result = f"[报告] 检测完成，共发现 {len(self.reports)} 个问题：\n"
         result += "=" * 50 + "\n"
         
         for i, report in enumerate(self.reports, 1):

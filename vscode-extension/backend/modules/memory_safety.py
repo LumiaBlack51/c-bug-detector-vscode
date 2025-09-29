@@ -63,6 +63,15 @@ class MemorySafetyModule:
                     malloc_call['line_content']
                 )
         
+        # 检测循环中的内存泄漏
+        self._detect_loop_memory_leaks(parsed_data)
+        
+        # 检测嵌套函数中的内存泄漏
+        self._detect_nested_function_memory_leaks(parsed_data)
+        
+        # 检测realloc后的内存泄漏
+        self._detect_realloc_memory_leaks(parsed_data)
+        
         # 检查每个malloc的变量是否都有对应的free
         for var_name in self.malloced_variables:
             if var_name not in self.freed_variables:
@@ -116,11 +125,27 @@ class MemorySafetyModule:
                         )
     
     def _detect_null_pointer_dereference(self, parsed_data: Dict[str, List]):
-        """检测空指针解引用"""
+        """检测空指针解引用 - 改进版本"""
         # 检查指针解引用前是否有NULL检查
         for deref in parsed_data['pointer_dereferences']:
             ptr_name = deref['pointer']
             line_num = deref['line']
+            line_content = deref['line_content']
+            
+            # 跳过指针初始化，只检查真正的解引用
+            if self._is_pointer_initialization(line_content):
+                print(f"[内存安全DEBUG] 跳过指针初始化: {line_content}")
+                continue
+            
+            # 检查是否是真正的指针解引用
+            if not self._is_real_pointer_dereference(line_content):
+                print(f"[内存安全DEBUG] 跳过非解引用: {line_content}")
+                continue
+            
+            # 跳过函数参数的解引用（减少误报）
+            if self._is_function_parameter(ptr_name, parsed_data):
+                print(f"[内存安全DEBUG] 跳过函数参数解引用: {ptr_name}")
+                continue
             
             # 检查前面几行是否有NULL检查
             has_null_check = False
@@ -136,8 +161,55 @@ class MemorySafetyModule:
                     line_num,
                     f"解引用指针 '{ptr_name}' 前未进行NULL检查",
                     "建议添加NULL检查：if (ptr != NULL) { /* 使用ptr */ }",
-                    deref['line_content']
+                    line_content
                 )
+    
+    def _is_function_parameter(self, ptr_name: str, parsed_data: Dict[str, List]) -> bool:
+        """检查指针是否是函数参数"""
+        # 遍历所有函数定义，检查参数列表
+        for line_num, line_content in enumerate(parsed_data['lines'], 1):
+            # 查找函数定义
+            func_match = re.search(r'\w+\s+(\w+)\s*\(([^)]*)\)', line_content)
+            if func_match:
+                func_name = func_match.group(1)
+                params_str = func_match.group(2)
+                
+                # 检查参数列表中是否包含该指针
+                if ptr_name in params_str:
+                    # 进一步验证是否真的是参数名（而不是类型名）
+                    param_pattern = rf'\b{ptr_name}\b'
+                    if re.search(param_pattern, params_str):
+                        return True
+        
+        return False
+    
+    def _is_pointer_initialization(self, line_content: str) -> bool:
+        """检查是否是指针初始化"""
+        # 检查是否是声明和初始化：int *ptr = &x;
+        if re.search(r'\*\s*\w+\s*=\s*&', line_content):
+            return True
+        
+        # 检查是否是字符串字面量初始化：const char *str = "hello";
+        if re.search(r'\*\s*\w+\s*=\s*"[^"]*"', line_content):
+            return True
+        
+        # 检查是否是malloc初始化：int *ptr = malloc(size);
+        if re.search(r'\*\s*\w+\s*=\s*malloc', line_content):
+            return True
+        
+        return False
+    
+    def _is_real_pointer_dereference(self, line_content: str) -> bool:
+        """检查是否是真正的指针解引用"""
+        # 检查是否是解引用操作：*ptr = value; 或 value = *ptr;
+        if re.search(r'\*\s*\w+\s*[=<>!]', line_content) or re.search(r'[=<>!]\s*\*\s*\w+', line_content):
+            return True
+        
+        # 检查是否是函数调用中的解引用：func(*ptr)
+        if re.search(r'\(\s*\*\s*\w+\s*\)', line_content):
+            return True
+        
+        return False
     
     def _detect_return_local_pointer(self, parsed_data: Dict[str, List]):
         """检测函数返回局部指针"""
@@ -159,6 +231,74 @@ class MemorySafetyModule:
                                 line_content
                             )
                         break
+    
+    def _detect_loop_memory_leaks(self, parsed_data: Dict[str, List]):
+        """检测循环中的内存泄漏"""
+        for line_num, line_content in enumerate(parsed_data['lines'], 1):
+            # 检测for循环中的malloc
+            if 'for' in line_content and 'malloc' in line_content:
+                # 查找循环中的malloc调用
+                malloc_match = self.patterns['malloc'].search(line_content)
+                if malloc_match:
+                    var_name = malloc_match.group(1)
+                    self.error_reporter.add_memory_error(
+                        line_num,
+                        f"变量 '{var_name}' 在循环中分配内存但未释放，可能导致循环内存泄漏",
+                        "建议在循环内或循环后释放内存：free(var_name);",
+                        line_content
+                    )
+    
+    def _detect_nested_function_memory_leaks(self, parsed_data: Dict[str, List]):
+        """检测嵌套函数中的内存泄漏"""
+        # 检测函数内部定义的函数中的malloc
+        in_nested_function = False
+        for line_num, line_content in enumerate(parsed_data['lines'], 1):
+            # 检测嵌套函数开始
+            if 'void' in line_content and '(' in line_content and '{' in line_content:
+                in_nested_function = True
+                continue
+            
+            # 检测嵌套函数结束
+            if in_nested_function and line_content.strip() == '}':
+                in_nested_function = False
+                continue
+            
+            # 在嵌套函数中检测malloc
+            if in_nested_function and 'malloc' in line_content:
+                malloc_match = self.patterns['malloc'].search(line_content)
+                if malloc_match:
+                    var_name = malloc_match.group(1)
+                    self.error_reporter.add_memory_error(
+                        line_num,
+                        f"变量 '{var_name}' 在嵌套函数中分配内存但未释放",
+                        "建议在函数结束前释放内存：free(var_name);",
+                        line_content
+                    )
+    
+    def _detect_realloc_memory_leaks(self, parsed_data: Dict[str, List]):
+        """检测realloc后的内存泄漏"""
+        for line_num, line_content in enumerate(parsed_data['lines'], 1):
+            if 'realloc' in line_content:
+                # 检测realloc调用
+                realloc_match = re.search(r'(\w+)\s*=\s*realloc\s*\(', line_content)
+                if realloc_match:
+                    var_name = realloc_match.group(1)
+                    # 检查后续是否有free
+                    has_free = False
+                    for i in range(line_num, min(line_num + 20, len(parsed_data['lines']))):
+                        if i < len(parsed_data['lines']):
+                            future_line = parsed_data['lines'][i]
+                            if f'free({var_name})' in future_line:
+                                has_free = True
+                                break
+                    
+                    if not has_free:
+                        self.error_reporter.add_memory_error(
+                            line_num,
+                            f"变量 '{var_name}' 通过realloc重新分配内存但未释放",
+                            "建议在适当位置释放realloc后的内存：free(var_name);",
+                            line_content
+                        )
     
     def get_module_name(self) -> str:
         """获取模块名称"""

@@ -164,12 +164,59 @@ class StandardLibraryModule:
         """分析标准库使用问题"""
         self.error_reporter.clear_reports()
         
+        # 首先扫描全局变量信息以便后续使用
+        self._scan_global_variables(parsed_data)
+        
         # 分析各种标准库使用问题
         self._detect_missing_headers(parsed_data)
         self._detect_header_misspellings(parsed_data)
         self._detect_function_parameter_issues(parsed_data)
         
         return self.error_reporter.get_reports()
+    
+    def _scan_global_variables(self, parsed_data: Dict[str, List]):
+        """扫描全局变量信息"""
+        self._global_variables = {}
+        
+        for line_num, line_content in enumerate(parsed_data['lines'], 1):
+            # 跳过注释行
+            if line_content.strip().startswith('//') or line_content.strip().startswith('/*'):
+                continue
+            
+            # 检查数组声明：int arr[10];
+            array_match = re.search(r'\b(\w+)\s+(\w+)\s*\[', line_content)
+            if array_match:
+                var_type, var_name = array_match.groups()
+                self._global_variables[var_name] = {
+                    'is_array': True,
+                    'is_pointer': False,
+                    'type': var_type,
+                    'line': line_num
+                }
+                continue  # 避免重复匹配
+            
+            # 检查指针声明：int *ptr; 或 int *ptr = &x;
+            pointer_match = re.search(r'\b(\w+)\s*\*\s*(\w+)\b', line_content)
+            if pointer_match:
+                var_type, var_name = pointer_match.groups()
+                self._global_variables[var_name] = {
+                    'is_array': False,
+                    'is_pointer': True,
+                    'type': var_type,
+                    'line': line_num
+                }
+                continue  # 避免重复匹配
+            
+            # 检查普通变量声明：int x; 或 int x = 100;
+            normal_var_match = re.search(r'\b(int|char|float|double|long|short|unsigned|signed|bool)\s+(\w+)\s*[;=]', line_content)
+            if normal_var_match:
+                var_type, var_name = normal_var_match.groups()
+                self._global_variables[var_name] = {
+                    'is_array': False,
+                    'is_pointer': False,
+                    'type': var_type,
+                    'line': line_num
+                }
     
     def _detect_missing_headers(self, parsed_data: Dict[str, List]):
         """检测缺失的头文件"""
@@ -229,59 +276,360 @@ class StandardLibraryModule:
             self._check_printf_parameters(line_content, line_num)
     
     def _check_scanf_parameters(self, line_content: str, line_num: int):
-        """检查scanf参数"""
+        """检查scanf参数 - 改进版本"""
         # 提取scanf的参数
         scanf_match = self.patterns['scanf_params'].search(line_content)
         if scanf_match:
             params = scanf_match.group(0)
             
-            # 检查参数中是否有&符号
-            # 简单的启发式检查：如果参数包含变量名但没有&，可能是错误
-            var_matches = re.findall(r'\b([a-zA-Z_][a-zA-Z0-9_]*)\b', params)
-            for var_name in var_matches:
-                if var_name not in ['scanf', 'printf', 'int', 'char', 'float', 'double', 'long', 'short', 'unsigned', 'signed']:
-                    # 检查变量前是否有&
-                    var_pattern = rf'\b{var_name}\b'
-                    if re.search(var_pattern, params) and '&' + var_name not in params:
+            # 解析scanf参数：分离格式字符串和实际参数
+            format_string, actual_params = self._parse_scanf_arguments(params)
+            
+            if format_string is None:
+                return  # 解析失败，跳过检查
+            
+            # 检查每个实际参数
+            for param in actual_params:
+                param = param.strip()
+                
+                # 跳过空参数
+                if not param:
+                    continue
+                
+                # 检查是否是变量名（不是关键字、类型名等）
+                if re.match(r'^[a-zA-Z_][a-zA-Z0-9_]*$', param):
+                    # 检查变量前是否有&符号
+                    if not param.startswith('&'):
+                        # 检查是否是数组名或指针变量（这些不需要&）
+                        # 注意：这里需要用全局变量信息来判断，而不仅仅是当前行
+                        if self._is_known_array_or_pointer(param):
+                            continue  # 数组名和指针变量不需要&
+                        
+                        # 检查是否是函数参数（通常不需要&）
+                        if self._is_function_parameter(param, line_content):
+                            continue
+                        
+                        # 报告缺少&的错误
                         self.error_reporter.add_library_error(
                             line_num,
-                            f"scanf中变量 '{var_name}' 缺少地址运算符 &",
-                            f"建议修正为：scanf(\"...\", &{var_name});",
+                            f"scanf中变量 '{param}' 缺少地址运算符 &",
+                            f"建议修正为：scanf(\"...\", &{param});",
                             line_content
                         )
     
+    def _parse_scanf_arguments(self, params_content: str):
+        """解析scanf参数，返回格式字符串和参数列表"""
+        params_content = params_content.strip()
+        
+        # 移除scanf(和)
+        if params_content.startswith('scanf('):
+            params_content = params_content[6:]
+        if params_content.endswith(')'):
+            params_content = params_content[:-1]
+        
+        # 查找第一个字符串字面量（格式字符串）
+        string_match = re.search(r'"([^"]*)"', params_content)
+        if string_match:
+            format_string = string_match.group(1)
+            # 获取格式字符串后的内容
+            after_format = params_content[string_match.end():].strip()
+            if after_format.startswith(','):
+                after_format = after_format[1:].strip()
+            
+            # 解析剩余参数
+            if after_format:
+                actual_params = self._parse_comma_separated_params(after_format)
+            else:
+                actual_params = []
+        else:
+            format_string = None
+            actual_params = []
+        
+        return format_string, actual_params
+    
+    def _is_array_or_pointer_variable(self, var_name: str, line_content: str) -> bool:
+        """检查变量是否是数组或指针变量"""
+        # 查找变量声明
+        # 检查是否是数组声明：int arr[10];
+        if re.search(rf'\b\w+\s+{var_name}\s*\[', line_content):
+            return True
+        
+        # 检查是否是指针声明：int *ptr;
+        if re.search(rf'\b\w+\s*\*\s*{var_name}\b', line_content):
+            return True
+        
+        # 检查是否是函数参数中的指针：int func(int *ptr)
+        if re.search(rf'\*\s*{var_name}\b', line_content):
+            return True
+        
+        # 检查是否是赋值语句中的指针：int *xp = &x;
+        if re.search(rf'\*\s*{var_name}\s*=', line_content):
+            return True
+        
+        return False
+    
+    def _is_known_array_or_pointer(self, var_name: str) -> bool:
+        """检查变量是否是已知的数组或指针变量"""
+        # 从缓存的代码中查找变量声明信息
+        # 这里可以使用全局变量状态来判断
+        if hasattr(self, '_global_variables'):
+            if var_name in self._global_variables:
+                var_info = self._global_variables[var_name]
+                return var_info.get('is_array', False) or var_info.get('is_pointer', False)
+        
+        # 回退到简单的命名规则判断
+        # 通常数组名以arr开头，指针名以p/ptr结尾或开头
+        if var_name.startswith('arr') or var_name.endswith('p') or var_name.endswith('ptr') or 'ptr' in var_name.lower():
+            return True
+        
+        return False
+    
+    def _is_function_parameter(self, var_name: str, line_content: str) -> bool:
+        """检查变量是否是函数参数"""
+        # 查找函数定义中的参数列表
+        func_match = re.search(r'\w+\s+\w+\s*\(([^)]*)\)', line_content)
+        if func_match:
+            params_str = func_match.group(1)
+            # 检查参数列表中是否包含该变量
+            if re.search(rf'\b{var_name}\b', params_str):
+                return True
+        
+        return False
+    
     def _check_printf_parameters(self, line_content: str, line_num: int):
-        """检查printf参数"""
+        """检查printf参数 - 改进版本"""
         # 提取printf的参数
-        printf_match = self.patterns['printf_params'].search(line_content)
-        if printf_match:
-            params = printf_match.group(0)
+        printf_match = re.search(r'printf\s*\(([^)]+)\)', line_content)
+        if not printf_match:
+            return
             
-            # 检查格式字符串和参数数量是否匹配
-            # 这是一个简化的检查，实际实现会更复杂
-            format_strings = re.findall(r'%[diouxXeEfFgGaAcspn%]', params)
+        params_content = printf_match.group(1).strip()
+        
+        # 解析参数：分离格式字符串和实际参数
+        format_string, actual_params = self._parse_printf_arguments(params_content)
+        
+        if format_string is None:
+            return  # 解析失败，跳过检查
+        
+        # 如果格式字符串是变量名而不是字符串字面量，跳过检查
+        # 注意：从双引号内提取出的格式字符串不会包含双引号
+        # 只有当格式字符串是变量名时才跳过（例如 printf(fmt, x)）
+        if re.match(r'^[a-zA-Z_][a-zA-Z0-9_]*$', format_string):
+            return  # 格式字符串是变量，无法静态分析
             
-            # 提取参数部分（括号内的内容）
-            param_match = re.search(r'printf\s*\(([^)]+)\)', params)
-            if param_match:
-                param_content = param_match.group(1)
-                # 计算参数数量（排除格式字符串）
-                # 简单计算：逗号分隔的参数数量
-                if format_strings:
-                    # 有格式字符串，计算逗号数量
-                    comma_count = param_content.count(',')
-                    param_count = comma_count
-                else:
-                    # 没有格式字符串，检查是否有参数
-                    param_count = 1 if param_content.strip() and param_content.strip() != '""' else 0
+        # 计算格式说明符数量 - 支持长度修饰符
+        format_specifiers = re.findall(r'%l?l?[diouxXeEfFgGaAcspn%]', format_string)
+        # 排除 %% 转义字符
+        format_specifiers = [spec for spec in format_specifiers if spec != '%%']
+        
+        # 计算实际参数数量
+        param_count = len(actual_params)
+        
+        # 检查匹配性
+        if len(format_specifiers) != param_count:
+            self.error_reporter.add_library_error(
+                line_num,
+                f"printf格式字符串数量({len(format_specifiers)})与参数数量({param_count})不匹配",
+                "建议检查格式字符串和参数数量是否一致",
+                line_content
+            )
+        else:
+            # 检查格式说明符与参数类型的兼容性
+            self._check_printf_type_compatibility(format_specifiers, actual_params, line_num, line_content)
+    
+    def _parse_printf_arguments(self, params_content: str):
+        """解析printf参数，返回格式字符串和参数列表"""
+        params_content = params_content.strip()
+        
+        # 处理只有格式字符串的情况：printf("string")
+        if params_content.startswith('"') and params_content.endswith('"'):
+            format_string = params_content[1:-1]  # 去掉引号
+            return format_string, []
+        
+        # 处理多个参数的情况
+        # 需要正确解析字符串字面量和参数
+        format_string = None
+        actual_params = []
+        
+        # 查找第一个字符串字面量（格式字符串）
+        string_match = re.search(r'"([^"]*)"', params_content)
+        if string_match:
+            format_string = string_match.group(1)
+            # 获取格式字符串后的内容
+            after_format = params_content[string_match.end():].strip()
+            if after_format.startswith(','):
+                after_format = after_format[1:].strip()
+            
+            # 解析剩余参数
+            if after_format:
+                actual_params = self._parse_comma_separated_params(after_format)
+        else:
+            # 如果没有找到字符串字面量，尝试其他方法
+            # 可能是printf(variable)的情况
+            parts = params_content.split(',', 1)
+            if len(parts) == 1:
+                # 只有一个参数，可能是格式字符串变量
+                format_string = parts[0].strip()
+                actual_params = []
+            else:
+                # 多个参数，第一个是格式字符串
+                format_string = parts[0].strip()
+                actual_params = self._parse_comma_separated_params(parts[1])
+        
+        return format_string, actual_params
+    
+    def _parse_comma_separated_params(self, params_str: str):
+        """解析逗号分隔的参数"""
+        params = []
+        current_param = ""
+        paren_count = 0
+        bracket_count = 0
+        in_string = False
+        escape_next = False
+        
+        for char in params_str:
+            if escape_next:
+                current_param += char
+                escape_next = False
+                continue
                 
-                if len(format_strings) != param_count:
-                    self.error_reporter.add_library_error(
-                        line_num,
-                        f"printf格式字符串数量({len(format_strings)})与参数数量({param_count})不匹配",
-                        "建议检查格式字符串和参数数量是否一致",
-                        line_content
-                    )
+            if char == '\\':
+                escape_next = True
+                current_param += char
+                continue
+                
+            if char == '"' and not escape_next:
+                in_string = not in_string
+                current_param += char
+                continue
+                
+            if in_string:
+                current_param += char
+                continue
+                
+            if char == '(':
+                paren_count += 1
+                current_param += char
+            elif char == ')':
+                paren_count -= 1
+                current_param += char
+            elif char == '[':
+                bracket_count += 1
+                current_param += char
+            elif char == ']':
+                bracket_count -= 1
+                current_param += char
+            elif char == ',' and paren_count == 0 and bracket_count == 0:
+                # 找到参数分隔符
+                if current_param.strip():
+                    params.append(current_param.strip())
+                current_param = ""
+            else:
+                current_param += char
+        
+        # 添加最后一个参数
+        if current_param.strip():
+            params.append(current_param.strip())
+            
+        return params
+    
+    def _check_printf_type_compatibility(self, format_specifiers: List[str], actual_params: List[str], line_num: int, line_content: str):
+        """检查printf格式说明符与参数类型的兼容性"""
+        for i, (spec, param) in enumerate(zip(format_specifiers, actual_params)):
+            param = param.strip()
+            
+            # 获取参数的可能类型信息
+            param_type = self._infer_parameter_type(param)
+            
+            # 检查兼容性
+            if not self._is_format_compatible(spec, param_type):
+                expected_types = self._get_expected_types_for_format(spec)
+                self.error_reporter.add_library_error(
+                    line_num,
+                    f"printf格式说明符 '{spec}' 与参数 '{param}' 类型不兼容",
+                    f"格式 '{spec}' 期望类型: {', '.join(expected_types)}",
+                    line_content
+                )
+    
+    def _infer_parameter_type(self, param: str) -> str:
+        """推断参数类型"""
+        # 检查是否是已知变量
+        if param in self._global_variables:
+            var_info = self._global_variables[param]
+            param_type = var_info['type']
+            
+            # 如果是指针类型，添加*后缀
+            if var_info.get('is_pointer', False) and not param_type.endswith('*'):
+                param_type += '*'
+            
+            return param_type
+        
+        # 检查是否是字面量
+        if param.isdigit():
+            return 'int'
+        elif param.replace('.', '').replace('-', '').isdigit():
+            return 'float'
+        elif param.startswith('"') and param.endswith('"'):
+            return 'char*'
+        elif param in ['true', 'false']:
+            return 'bool'
+        
+        return 'unknown'
+    
+    def _is_format_compatible(self, format_spec: str, param_type: str) -> bool:
+        """检查格式说明符与参数类型是否兼容"""
+        if param_type == 'unknown':
+            return True  # 无法确定类型，跳过检查
+        
+        # 兼容性映射表
+        compatibility_map = {
+            '%d': ['int', 'short', 'char'],
+            '%i': ['int', 'short', 'char'],
+            '%u': ['unsigned int', 'unsigned', 'int'],
+            '%o': ['int', 'unsigned int'],
+            '%x': ['int', 'unsigned int'],
+            '%X': ['int', 'unsigned int'],
+            '%f': ['float', 'double'],
+            '%F': ['float', 'double'],
+            '%e': ['float', 'double'],
+            '%E': ['float', 'double'],
+            '%g': ['float', 'double'],
+            '%G': ['float', 'double'],
+            '%c': ['char', 'int'],
+            '%s': ['char*', 'string'],
+            '%p': ['pointer', 'void*', 'int*', 'char*'],
+            '%ld': ['long', 'long int'],
+            '%lld': ['long long', 'long long int'],
+            '%lf': ['double']
+        }
+        
+        expected_types = compatibility_map.get(format_spec, [])
+        return param_type in expected_types
+    
+    def _get_expected_types_for_format(self, format_spec: str) -> List[str]:
+        """获取格式说明符期望的类型列表"""
+        type_map = {
+            '%d': ['int'],
+            '%i': ['int'],
+            '%u': ['unsigned int'],
+            '%o': ['unsigned int'],
+            '%x': ['unsigned int'],
+            '%X': ['unsigned int'],
+            '%f': ['double'],
+            '%F': ['double'],
+            '%e': ['double'],
+            '%E': ['double'],
+            '%g': ['double'],
+            '%G': ['double'],
+            '%c': ['char'],
+            '%s': ['char*'],
+            '%p': ['pointer'],
+            '%ld': ['long'],
+            '%lld': ['long long'],
+            '%lf': ['double']
+        }
+        
+        return type_map.get(format_spec, ['unknown'])
     
     def get_module_name(self) -> str:
         """获取模块名称"""
