@@ -184,8 +184,8 @@ class NumericControlFlowModule:
             wrapped_code = self._wrap_c_code(line_content)
             
             if wrapped_code:
-                print(f"[C AST DEBUG] 第{line_num}行: 原始='{line_content.strip()}'")
-                print(f"[C AST DEBUG] 包装后: {wrapped_code}")
+                # print(f"[C AST DEBUG] 第{line_num}行: 原始='{line_content.strip()}'")  # 禁用调试输出
+                # print(f"[C AST DEBUG] 包装后: {wrapped_code}")  # 禁用调试输出
                 
                 # 解析为C语言AST
                 ast_node = parser.parse(wrapped_code)
@@ -194,7 +194,7 @@ class NumericControlFlowModule:
                 return self._visit_c_ast_nodes(ast_node, line_num, line_content, parsed_data, reported_issues)
                 
         except Exception as e:
-            print(f"[C AST DEBUG] C AST解析异常: {e}")
+            # print(f"[C AST DEBUG] C AST解析异常: {e}")  # 禁用调试输出
             pass
         
         return False
@@ -233,17 +233,17 @@ class NumericControlFlowModule:
         
         # 检查while循环
         if isinstance(node, While):
-            print(f"[C AST DEBUG] 发现while循环节点")
+            # print(f"[C AST DEBUG] 发现while循环节点")  # 禁用调试输出
             detected_issue = self._analyze_c_while_ast(node, line_num, line_content, reported_issues) or detected_issue
         
         # 检查for循环
         elif isinstance(node, For):
-            print(f"[C AST DEBUG] 发现for循环节点")
+            # print(f"[C AST DEBUG] 发现for循环节点")  # 禁用调试输出
             detected_issue = self._analyze_c_for_ast(node, line_num, line_content, reported_issues, parsed_data) or detected_issue
         
         # 检查赋值语句
         elif isinstance(node, Assignment):
-            print(f"[C AST DEBUG] 发现赋值节点")
+            # print(f"[C AST DEBUG] 发现赋值节点")  # 禁用调试输出
             detected_issue = self._analyze_c_assignment_ast(node, line_num, line_content, parsed_data, reported_issues) or detected_issue
         
         # 递归遍历子节点

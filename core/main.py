@@ -8,11 +8,17 @@ import argparse
 from typing import List, Dict, Any
 from colorama import init, Fore, Style
 
+# 强制设置UTF-8编码
+import io
+sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
+sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
+
 # 初始化colorama
 init()
 
 # 导入检测模块
 from modules.memory_safety import MemorySafetyModule
+from modules.ast_memory_tracker import CMemorySimulator
 from modules.variable_state import VariableStateModule
 from modules.variable_state_improved import ImprovedVariableStateModule
 from modules.memory_safety_improved import ImprovedMemorySafetyModule
@@ -33,6 +39,7 @@ class CBugDetector:
         
         # 初始化所有检测模块
         self.modules = {
+            'ast_memory_tracker': CMemorySimulator(),
             'memory_safety': ImprovedMemorySafetyModule(),
             'variable_state': ImprovedVariableStateModule(),
             'standard_library': StandardLibraryModule(),
@@ -41,8 +48,9 @@ class CBugDetector:
         
         # 模块启用状态
         self.module_enabled = {
-            'memory_safety': True,
-            'variable_state': True,
+            'ast_memory_tracker': True,
+            'memory_safety': False,  # 禁用旧的内存检测器
+            'variable_state': False,  # 禁用旧的变量状态检测器
             'standard_library': True,
             'numeric_control_flow': True,
         }
@@ -92,6 +100,53 @@ class CBugDetector:
             
         except Exception as e:
             print(f"{Fore.RED}分析文件时出错: {e}{Style.RESET_ALL}")
+            return []
+    
+    def analyze_file_quiet(self, file_path: str) -> List[BugReport]:
+        """安静模式分析单个C文件（不输出调试信息）"""
+        # 检查文件是否存在
+        if not os.path.exists(file_path):
+            return []
+        
+        # 检查文件扩展名
+        if not file_path.endswith('.c'):
+            pass  # 静默跳过警告
+        
+        try:
+            # 解析C代码
+            parsed_data = self.parser.parse_file(file_path)
+            if not parsed_data:
+                return []
+            
+            # 获取所有报告
+            all_reports = []
+            
+            # 遍历所有启用的检测模块
+            for module_name, module in self.modules.items():
+                if self.module_enabled[module_name]:
+                    try:
+                        # 调用模块分析方法
+                        module_reports = module.analyze(parsed_data)
+                        all_reports.extend(module_reports)
+                    except Exception as e:
+                        pass  # 静默忽略模块错误
+            
+            # 去重
+            seen = set()
+            deduplicated_reports = []
+            for report in all_reports:
+                report_key = (report.line_number, report.error_type.value, report.message)
+                if report_key not in seen:
+                    seen.add(report_key)
+                    deduplicated_reports.append(report)
+            
+            # 添加到错误报告器
+            for report in deduplicated_reports:
+                self.error_reporter.add_report(report)
+            
+            return deduplicated_reports
+            
+        except Exception as e:
             return []
     
     def _deduplicate_reports(self, reports: List[BugReport]) -> List[BugReport]:
@@ -160,10 +215,10 @@ class CBugDetector:
     
     def analyze_directory(self, directory_path: str) -> Dict[str, List[BugReport]]:
         """分析目录中的所有C文件"""
-        print(f"{Fore.CYAN}🔍 正在分析目录: {directory_path}{Style.RESET_ALL}")
+        print(f"{Fore.CYAN}正在分析目录: {directory_path}{Style.RESET_ALL}")
         
         if not os.path.exists(directory_path):
-            print(f"{Fore.RED}❌ 错误: 目录 {directory_path} 不存在{Style.RESET_ALL}")
+            print(f"{Fore.RED}错误: 目录 {directory_path} 不存在{Style.RESET_ALL}")
             return {}
         
         results = {}
@@ -183,9 +238,9 @@ class CBugDetector:
         """启用指定模块"""
         if module_name in self.modules:
             self.module_enabled[module_name] = True
-            print(f"{Fore.GREEN}✅ 已启用模块: {self.modules[module_name].get_module_name()}{Style.RESET_ALL}")
+            print(f"{Fore.GREEN}已启用模块: {self.modules[module_name].get_module_name()}{Style.RESET_ALL}")
         else:
-            print(f"{Fore.RED}❌ 错误: 模块 {module_name} 不存在{Style.RESET_ALL}")
+            print(f"{Fore.RED}错误: 模块 {module_name} 不存在{Style.RESET_ALL}")
     
     def disable_module(self, module_name: str):
         """禁用指定模块"""
@@ -193,14 +248,14 @@ class CBugDetector:
             self.module_enabled[module_name] = False
             print(f"{Fore.YELLOW}⚠️  已禁用模块: {self.modules[module_name].get_module_name()}{Style.RESET_ALL}")
         else:
-            print(f"{Fore.RED}❌ 错误: 模块 {module_name} 不存在{Style.RESET_ALL}")
+            print(f"{Fore.RED}错误: 模块 {module_name} 不存在{Style.RESET_ALL}")
     
     def list_modules(self):
         """列出所有可用模块"""
-        print(f"{Fore.CYAN}📋 可用模块列表:{Style.RESET_ALL}")
+        print(f"{Fore.CYAN}可用模块列表:{Style.RESET_ALL}")
         print("=" * 50)
         for module_name, module in self.modules.items():
-            status = "✅ 启用" if self.module_enabled[module_name] else "❌ 禁用"
+            status = "启用" if self.module_enabled[module_name] else "禁用"
             print(f"{module_name}: {module.get_module_name()} - {status}")
             print(f"  描述: {module.get_description()}")
             print()
@@ -232,9 +287,9 @@ class CBugDetector:
         try:
             with open(output_file, 'w', encoding='utf-8') as f:
                 f.write(report_content)
-            print(f"{Fore.GREEN}✅ 报告已保存到: {output_file}{Style.RESET_ALL}")
+            print(f"{Fore.GREEN}报告已保存到: {output_file}{Style.RESET_ALL}")
         except Exception as e:
-            print(f"{Fore.RED}❌ 保存报告时出错: {e}{Style.RESET_ALL}")
+            print(f"{Fore.RED}保存报告时出错: {e}{Style.RESET_ALL}")
 
 
 def main():
@@ -269,32 +324,36 @@ def main():
     
     # 检查输入路径
     if args.input and not os.path.exists(args.input):
-        print(f"{Fore.RED}❌ 错误: 路径 {args.input} 不存在{Style.RESET_ALL}")
+        print(f"{Fore.RED}错误: 路径 {args.input} 不存在{Style.RESET_ALL}")
         return
     
     # 分析文件或目录
     if args.input and os.path.isfile(args.input):
         # 单文件分析
-        reports = detector.analyze_file(args.input)
+        reports = detector.analyze_file(args.input) if args.format != 'json' else detector.analyze_file_quiet(args.input)
         
-        if reports:
-            print(f"\n{Fore.YELLOW}📊 检测完成，共发现 {len(reports)} 个问题{Style.RESET_ALL}")
+        if args.format == 'json':
+            # JSON格式输出，不显示额外信息
             print(detector.generate_report(reports, args.format))
+        else:
+            if reports:
+                print(f"\n{Fore.YELLOW}检测完成，共发现 {len(reports)} 个问题{Style.RESET_ALL}")
+                print(detector.generate_report(reports, args.format))
+            else:
+                print(f"{Fore.GREEN}恭喜！没有发现任何问题。{Style.RESET_ALL}")
             
             if args.output:
                 detector.save_report(reports, args.output, args.format)
-        else:
-            print(f"{Fore.GREEN}✅ 恭喜！没有发现任何问题。{Style.RESET_ALL}")
     
     elif args.input and os.path.isdir(args.input):
         # 目录分析（批量检测模式）
-        print(f"{Fore.CYAN}🔍 开始批量检测目录: {args.input}{Style.RESET_ALL}")
+        print(f"{Fore.CYAN}开始批量检测目录: {args.input}{Style.RESET_ALL}")
         results = detector.analyze_directory(args.input)
         
         if results:
             total_issues = sum(len(reports) for reports in results.values())
-            print(f"\n{Fore.GREEN}✅ 批量检测完成！{Style.RESET_ALL}")
-            print(f"{Fore.CYAN}📊 统计结果:{Style.RESET_ALL}")
+            print(f"\n{Fore.GREEN}批量检测完成！{Style.RESET_ALL}")
+            print(f"{Fore.CYAN}统计结果:{Style.RESET_ALL}")
             print(f"   - 检测文件数: {len(results)}")
             print(f"   - 发现问题数: {total_issues}")
             
@@ -314,9 +373,9 @@ def main():
                 for reports in results.values():
                     all_reports.extend(reports)
                 detector.save_report(all_reports, args.output, args.format)
-                print(f"{Fore.BLUE}💾 报告已保存到: {args.output}{Style.RESET_ALL}")
+                print(f"{Fore.BLUE}报告已保存到: {args.output}{Style.RESET_ALL}")
         else:
-            print(f"{Fore.GREEN}✅ 恭喜！所有文件都没有发现任何问题。{Style.RESET_ALL}")
+            print(f"{Fore.GREEN}恭喜！所有文件都没有发现任何问题。{Style.RESET_ALL}")
 
 
 if __name__ == '__main__':

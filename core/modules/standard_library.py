@@ -288,13 +288,29 @@ class StandardLibraryModule:
             if format_string is None:
                 return  # 解析失败，跳过检查
             
+            # 解析格式字符串中的格式说明符
+            format_specifiers = self._parse_scanf_format_specifiers(format_string)
+            
+            # 检查参数数量匹配
+            if len(format_specifiers) != len(actual_params):
+                self.error_reporter.add_library_error(
+                    line_num,
+                    f"scanf格式字符串数量({len(format_specifiers)})与参数数量({len(actual_params)})不匹配",
+                    "建议检查格式字符串和参数数量是否一致",
+                    line_content
+                )
+                return  # 数量不匹配时跳过后续检查
+            
             # 检查每个实际参数
-            for param in actual_params:
+            for i, param in enumerate(actual_params):
                 param = param.strip()
                 
                 # 跳过空参数
                 if not param:
                     continue
+                
+                # 获取对应的格式说明符
+                format_spec = format_specifiers[i] if i < len(format_specifiers) else None
                 
                 # 检查是否是变量名（不是关键字、类型名等）
                 if re.match(r'^[a-zA-Z_][a-zA-Z0-9_]*$', param):
@@ -303,6 +319,9 @@ class StandardLibraryModule:
                         # 检查是否是数组名或指针变量（这些不需要&）
                         # 注意：这里需要用全局变量信息来判断，而不仅仅是当前行
                         if self._is_known_array_or_pointer(param):
+                            # 对于数组，检查类型匹配
+                            if format_spec:
+                                self._check_scanf_type_compatibility(param, format_spec, line_num, line_content, is_array=True)
                             continue  # 数组名和指针变量不需要&
                         
                         # 检查是否是函数参数（通常不需要&）
@@ -316,6 +335,25 @@ class StandardLibraryModule:
                             f"建议修正为：scanf(\"...\", &{param});",
                             line_content
                         )
+                elif param.startswith('&'):
+                    # 参数已经有&符号，检查是否是数组名（数组名不应该有&）
+                    var_name = param[1:]  # 去掉&符号
+                    if self._is_known_array_or_pointer(var_name):
+                        if self._global_variables.get(var_name, {}).get('is_array', False):
+                            self.error_reporter.add_library_error(
+                                line_num,
+                                f"scanf中数组名 '{var_name}' 不需要地址运算符 &",
+                                f"建议修正为：scanf(\"...\", {var_name});",
+                                line_content
+                            )
+                        else:
+                            # 对于指针或普通变量，检查类型匹配
+                            if format_spec:
+                                self._check_scanf_type_compatibility(var_name, format_spec, line_num, line_content, is_array=False)
+                    else:
+                        # 对于普通变量，检查类型匹配
+                        if format_spec:
+                            self._check_scanf_type_compatibility(var_name, format_spec, line_num, line_content, is_array=False)
     
     def _parse_scanf_arguments(self, params_content: str):
         """解析scanf参数，返回格式字符串和参数列表"""
@@ -621,6 +659,105 @@ class StandardLibraryModule:
             '%ld': ['long'],
             '%lld': ['long long'],
             '%lf': ['double']
+        }
+        
+        return type_map.get(format_spec, ['unknown'])
+    
+    def _parse_scanf_format_specifiers(self, format_string: str) -> List[str]:
+        """解析scanf格式字符串中的格式说明符"""
+        # 匹配scanf格式说明符：%[flags][width][length]specifier
+        # 支持的格式：%d, %i, %o, %x, %X, %u, %f, %F, %e, %E, %g, %G, %a, %A, %c, %s, %p, %n
+        # 支持长度修饰符：h, hh, l, ll, j, z, t, L
+        pattern = r'%(?:[hlLjzt]*)?[diouxXeEfFgGaAcspn]'
+        specifiers = re.findall(pattern, format_string)
+        return specifiers
+    
+    def _check_scanf_type_compatibility(self, var_name: str, format_spec: str, line_num: int, line_content: str, is_array: bool = False):
+        """检查scanf格式说明符与变量类型的兼容性"""
+        # 获取变量类型信息
+        if var_name in self._global_variables:
+            var_info = self._global_variables[var_name]
+            var_type = var_info['type']
+            
+            # 检查兼容性
+            if not self._is_scanf_format_compatible(format_spec, var_type, is_array):
+                expected_types = self._get_expected_types_for_scanf_format(format_spec)
+                self.error_reporter.add_library_error(
+                    line_num,
+                    f"scanf格式说明符 '{format_spec}' 与变量 '{var_name}' 类型不兼容",
+                    f"变量类型: {var_type}, 格式 '{format_spec}' 期望类型: {', '.join(expected_types)}",
+                    line_content
+                )
+    
+    def _is_scanf_format_compatible(self, format_spec: str, var_type: str, is_array: bool = False) -> bool:
+        """检查scanf格式说明符与变量类型是否兼容"""
+        # 兼容性映射表
+        compatibility_map = {
+            '%d': ['int', 'short', 'long'],
+            '%i': ['int', 'short', 'long'],
+            '%u': ['unsigned int', 'unsigned', 'unsigned short', 'unsigned long'],
+            '%o': ['unsigned int', 'unsigned', 'unsigned short', 'unsigned long'],
+            '%x': ['unsigned int', 'unsigned', 'unsigned short', 'unsigned long'],
+            '%X': ['unsigned int', 'unsigned', 'unsigned short', 'unsigned long'],
+            '%f': ['float'],
+            '%F': ['float'],
+            '%e': ['float'],
+            '%E': ['float'],
+            '%g': ['float'],
+            '%G': ['float'],
+            '%lf': ['double'],
+            '%le': ['double'],
+            '%lE': ['double'],
+            '%lg': ['double'],
+            '%lG': ['double'],
+            '%c': ['char'],
+            '%s': ['char'],  # 对于数组
+            '%p': ['pointer', 'void*', 'int*', 'char*'],
+            '%ld': ['long', 'long int'],
+            '%li': ['long', 'long int'],
+            '%lu': ['unsigned long'],
+            '%lld': ['long long', 'long long int'],
+            '%lli': ['long long', 'long long int'],
+            '%llu': ['unsigned long long'],
+        }
+        
+        expected_types = compatibility_map.get(format_spec, [])
+        
+        # 特殊处理数组情况
+        if is_array and format_spec == '%s':
+            return var_type == 'char'  # 字符串数组
+        
+        return var_type in expected_types
+    
+    def _get_expected_types_for_scanf_format(self, format_spec: str) -> List[str]:
+        """获取scanf格式说明符期望的类型列表"""
+        type_map = {
+            '%d': ['int'],
+            '%i': ['int'],
+            '%u': ['unsigned int'],
+            '%o': ['unsigned int'],
+            '%x': ['unsigned int'],
+            '%X': ['unsigned int'],
+            '%f': ['float'],
+            '%F': ['float'],
+            '%e': ['float'],
+            '%E': ['float'],
+            '%g': ['float'],
+            '%G': ['float'],
+            '%lf': ['double'],
+            '%le': ['double'],
+            '%lE': ['double'],
+            '%lg': ['double'],
+            '%lG': ['double'],
+            '%c': ['char'],
+            '%s': ['char array'],
+            '%p': ['pointer'],
+            '%ld': ['long'],
+            '%li': ['long'],
+            '%lu': ['unsigned long'],
+            '%lld': ['long long'],
+            '%lli': ['long long'],
+            '%llu': ['unsigned long long'],
         }
         
         return type_map.get(format_spec, ['unknown'])

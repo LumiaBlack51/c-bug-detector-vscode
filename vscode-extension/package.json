@@ -141,7 +141,7 @@
         },
         "c-bug-detector.backendPath": {
           "type": "string",
-          "default": "backend/main.py",
+          "default": "../core/main.py",
           "description": "后端检测器路径（相对于插件目录）"
         }
       }

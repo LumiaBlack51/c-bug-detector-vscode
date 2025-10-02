@@ -47,34 +47,35 @@ class MemorySafetyModule:
     
     def _detect_memory_leaks(self, parsed_data: Dict[str, List]):
         """检测内存泄漏"""
+        # 首先收集所有free调用
+        freed_vars = set()
+        for free_call in parsed_data['free_calls']:
+            line_content = free_call['line_content']
+            # 提取free中的变量名
+            free_match = self.patterns['free'].search(line_content)
+            if free_match:
+                var_name = free_match.group(1)
+                freed_vars.add(var_name)
+        
         # 记录所有malloc的变量
         for malloc_call in parsed_data['malloc_calls']:
             var_name = malloc_call['variable']
             line_num = malloc_call['line']
             self.malloced_variables.add(var_name)
-            
-            # 检查变量是否被正确初始化
-            var_info = self.parser.get_variable_by_name(var_name, parsed_data)
-            if var_info and not var_info.is_initialized:
-                self.error_reporter.add_memory_error(
-                    line_num,
-                    f"变量 '{var_name}' 通过malloc分配内存后未检查返回值",
-                    "建议添加NULL检查：if (var_name == NULL) { /* 处理错误 */ }",
-                    malloc_call['line_content']
-                )
         
         # 检查每个malloc的变量是否都有对应的free
-        for var_name in self.malloced_variables:
-            if var_name not in self.freed_variables:
-                # 查找变量声明的位置
-                var_info = self.parser.get_variable_by_name(var_name, parsed_data)
-                if var_info:
-                    self.error_reporter.add_memory_error(
-                        var_info.line_number,
-                        f"变量 '{var_name}' 分配了内存但未释放，可能导致内存泄漏",
-                        "建议在适当位置添加 free(var_name); 语句",
-                        ""
-                    )
+        for malloc_call in parsed_data['malloc_calls']:
+            var_name = malloc_call['variable']
+            line_num = malloc_call['line']
+            
+            # 只有当变量确实没有被释放时才报告内存泄漏
+            if var_name not in freed_vars:
+                self.error_reporter.add_memory_error(
+                    line_num,
+                    f"变量 '{var_name}' 分配了内存但未释放，可能导致内存泄漏",
+                    "建议在适当位置添加 free({0}); 语句".format(var_name),
+                    malloc_call['line_content']
+                )
     
     def _detect_wild_pointers(self, parsed_data: Dict[str, List]):
         """检测野指针"""

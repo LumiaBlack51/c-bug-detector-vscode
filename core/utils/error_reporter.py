@@ -123,20 +123,20 @@ class ErrorReporter:
     def format_report(self, report: BugReport) -> str:
         """格式化单个报告"""
         return f"""
-🔍 {report.module_name} 检测到问题：
+检测模块: {report.module_name} 检测到问题：
 
-📍 位置：第 {report.line_number} 行
-⚠️  类型：{report.error_type.value} - {report.severity.value}
-💬 问题：{report.message}
-💡 建议：{report.suggestion}
+位置：第 {report.line_number} 行
+类型：{report.error_type.value} - {report.severity.value}
+问题：{report.message}
+建议：{report.suggestion}
 """
     
     def format_all_reports(self) -> str:
         """格式化所有报告"""
         if not self.reports:
-            return "✅ 恭喜！没有发现任何问题。"
+            return "恭喜！没有发现任何问题。"
         
-        result = f"📊 检测完成，共发现 {len(self.reports)} 个问题：\n"
+        result = f"检测完成，共发现 {len(self.reports)} 个问题：\n"
         result += "=" * 50 + "\n"
         
         for i, report in enumerate(self.reports, 1):

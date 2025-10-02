@@ -16,15 +16,13 @@ vscode-extension/
 │   ├── resultsProvider.ts # 结果提供器
 │   └── detectionPanel.ts  # 检测面板
 ├── out/                   # 编译后的JavaScript
-├── backend/                # 内置Python后端
+├── ../core/                # Python后端（共享）
 │   ├── main.py
 │   ├── requirements.txt
 │   ├── modules/
 │   └── utils/
 ├── media/                  # 扩展资源
 │   └── icon.svg
-├── scripts/                # 构建脚本
-│   └── copy-backend.js
 └── c-bug-detector-1.0.0.vsix # 打包后的扩展文件
 ```
 
@@ -94,8 +92,7 @@ npm install
 # 编译TypeScript
 npm run compile
 
-# 复制Python后端文件
-npm run copy-backend
+# Python后端已统一到../core目录
 
 # 打包扩展
 vsce package

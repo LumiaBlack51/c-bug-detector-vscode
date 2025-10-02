@@ -1,21 +1,28 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
 import * as fs from 'fs';
-import { CDetector, BugReport, AnalysisResult } from './cDetector';
+import { spawn } from 'child_process';
+import { BugReport, AnalysisResult } from './cDetector';
 
 export { BugReport, AnalysisResult };
 
 export class BugDetectorBackend {
     private config: vscode.WorkspaceConfiguration;
-    private detector: CDetector;
+    private pythonPath: string;
+    private backendPath: string;
 
     constructor() {
         this.config = vscode.workspace.getConfiguration('c-bug-detector');
-        this.detector = new CDetector();
+        this.pythonPath = this.config.get('pythonPath', 'python');
+        
+        // 获取插件后端路径
+        const extensionPath = vscode.extensions.getExtension('c-bug-detector.c-bug-detector')?.extensionPath || '';
+        this.backendPath = path.join(extensionPath, '..', 'core', 'main.py');
     }
 
     public updateConfiguration(): void {
         this.config = vscode.workspace.getConfiguration('c-bug-detector');
+        this.pythonPath = this.config.get('pythonPath', 'python');
     }
 
     public async analyzeFile(filePath: string): Promise<AnalysisResult> {
@@ -41,8 +48,8 @@ export class BugDetectorBackend {
                 };
             }
 
-            // 使用TypeScript检测器
-            const result = this.detector.analyzeFile(filePath);
+            // 调用Python后端
+            const result = await this.callPythonBackend(filePath);
             return result;
         } catch (error) {
             return {
@@ -143,6 +150,97 @@ export class BugDetectorBackend {
 
         await findFiles(rootPath);
         return cFiles;
+    }
+
+    private async callPythonBackend(filePath: string): Promise<AnalysisResult> {
+        return new Promise((resolve, reject) => {
+            // 检查后端文件是否存在
+            if (!fs.existsSync(this.backendPath)) {
+                resolve({
+                    file_path: filePath,
+                    reports: [],
+                    success: false,
+                    error: `Python后端文件不存在: ${this.backendPath}`
+                });
+                return;
+            }
+
+            const python = spawn(this.pythonPath, [this.backendPath, filePath, '--format', 'json'], {
+                cwd: path.dirname(this.backendPath)
+            });
+
+            let stdout = '';
+            let stderr = '';
+
+            python.stdout.on('data', (data) => {
+                stdout += data.toString();
+            });
+
+            python.stderr.on('data', (data) => {
+                stderr += data.toString();
+            });
+
+            python.on('close', (code) => {
+                if (code !== 0) {
+                    resolve({
+                        file_path: filePath,
+                        reports: [],
+                        success: false,
+                        error: `Python后端执行失败 (exit code ${code}): ${stderr}`
+                    });
+                    return;
+                }
+
+                try {
+                    // 解析JSON输出
+                    const jsonOutput = this.extractJsonFromOutput(stdout);
+                    if (!jsonOutput) {
+                        resolve({
+                            file_path: filePath,
+                            reports: [],
+                            success: false,
+                            error: `无法解析Python后端输出: ${stdout}`
+                        });
+                        return;
+                    }
+
+                    const reports = JSON.parse(jsonOutput);
+                    resolve({
+                        file_path: filePath,
+                        reports: reports,
+                        success: true
+                    });
+                } catch (error) {
+                    resolve({
+                        file_path: filePath,
+                        reports: [],
+                        success: false,
+                        error: `解析检测结果失败: ${error}`
+                    });
+                }
+            });
+
+            python.on('error', (error) => {
+                resolve({
+                    file_path: filePath,
+                    reports: [],
+                    success: false,
+                    error: `启动Python后端失败: ${error.message}`
+                });
+            });
+        });
+    }
+
+    private extractJsonFromOutput(output: string): string | null {
+        // 查找JSON数组的开始和结束
+        const startIndex = output.indexOf('[');
+        const endIndex = output.lastIndexOf(']');
+        
+        if (startIndex !== -1 && endIndex !== -1 && endIndex > startIndex) {
+            return output.substring(startIndex, endIndex + 1);
+        }
+        
+        return null;
     }
 
     public dispose(): void {
