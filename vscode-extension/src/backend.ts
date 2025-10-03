@@ -2,9 +2,24 @@ import * as vscode from 'vscode';
 import * as path from 'path';
 import * as fs from 'fs';
 import { spawn } from 'child_process';
-import { BugReport, AnalysisResult } from './cDetector';
 
-export { BugReport, AnalysisResult };
+// 定义接口
+export interface BugReport {
+    line_number: number;
+    error_type: string;
+    severity: string;
+    message: string;
+    suggestion: string;
+    code_snippet: string;
+    module_name: string;
+}
+
+export interface AnalysisResult {
+    file_path: string;
+    reports: BugReport[];
+    success: boolean;
+    error?: string;
+}
 
 export class BugDetectorBackend {
     private config: vscode.WorkspaceConfiguration;
@@ -63,26 +78,24 @@ export class BugDetectorBackend {
 
     public async analyzeWorkspace(): Promise<AnalysisResult[]> {
         try {
-            if (!vscode.workspace.workspaceFolders) {
-                return [{
-                    file_path: 'workspace',
-                    reports: [],
-                    success: false,
-                    error: '没有打开的工作区'
-                }];
+            const workspaceFolders = vscode.workspace.workspaceFolders;
+            if (!workspaceFolders) {
+                return [];
             }
 
             const results: AnalysisResult[] = [];
-            
-            for (const folder of vscode.workspace.workspaceFolders) {
-                const folderResults = await this.analyzeDirectory(folder.uri.fsPath);
-                results.push(...folderResults);
+            for (const folder of workspaceFolders) {
+                const cFiles = await this.findCFiles(folder.uri.fsPath);
+                for (const file of cFiles) {
+                    const result = await this.analyzeFile(file);
+                    results.push(result);
+                }
             }
 
             return results;
         } catch (error) {
             return [{
-                file_path: 'workspace',
+                file_path: '',
                 reports: [],
                 success: false,
                 error: `工作区分析失败: ${error}`
@@ -90,70 +103,37 @@ export class BugDetectorBackend {
         }
     }
 
-    private async analyzeDirectory(directoryPath: string): Promise<AnalysisResult[]> {
-        try {
-            const results: AnalysisResult[] = [];
-            
-            // 检查目录是否存在
-            if (!fs.existsSync(directoryPath)) {
-                return [{
-                    file_path: directoryPath,
-                    reports: [],
-                    success: false,
-                    error: `目录不存在: ${directoryPath}`
-                }];
-            }
-
-            // 递归查找C文件
-            const cFiles = await this.findCFiles(directoryPath);
-            
-            // 分析每个文件
-            for (const filePath of cFiles) {
-                const result = await this.analyzeFile(filePath);
-                results.push(result);
-            }
-
-            return results;
-        } catch (error) {
-            return [{
-                file_path: directoryPath,
-                reports: [],
-                success: false,
-                error: `检测器执行失败: ${error}`
-            }];
-        }
-    }
-
     private async findCFiles(rootPath: string): Promise<string[]> {
         const cFiles: string[] = [];
         
-        const findFiles = async (dirPath: string): Promise<void> => {
-            try {
-                const entries = await fs.promises.readdir(dirPath, { withFileTypes: true });
+        const searchDir = (dir: string) => {
+            const files = fs.readdirSync(dir);
+            for (const file of files) {
+                const fullPath = path.join(dir, file);
+                const stat = fs.statSync(fullPath);
                 
-                for (const entry of entries) {
-                    const fullPath = path.join(dirPath, entry.name);
-                    
-                    if (entry.isDirectory()) {
-                        // 跳过常见的忽略目录
-                        if (!['node_modules', '.git', '.vscode', 'out', 'build'].includes(entry.name)) {
-                            await findFiles(fullPath);
-                        }
-                    } else if (entry.isFile() && (entry.name.endsWith('.c') || entry.name.endsWith('.h'))) {
-                        cFiles.push(fullPath);
+                if (stat.isDirectory()) {
+                    // 跳过一些常见的目录
+                    if (!['node_modules', '.git', 'build', 'dist'].includes(file)) {
+                        searchDir(fullPath);
                     }
+                } else if (file.endsWith('.c') || file.endsWith('.h')) {
+                    cFiles.push(fullPath);
                 }
-            } catch (error) {
-                console.error(`读取目录失败 ${dirPath}:`, error);
             }
         };
 
-        await findFiles(rootPath);
+        try {
+            searchDir(rootPath);
+        } catch (error) {
+            console.error(`搜索C文件时出错: ${error}`);
+        }
+
         return cFiles;
     }
 
     private async callPythonBackend(filePath: string): Promise<AnalysisResult> {
-        return new Promise((resolve, reject) => {
+        return new Promise((resolve) => {
             // 检查后端文件是否存在
             if (!fs.existsSync(this.backendPath)) {
                 resolve({

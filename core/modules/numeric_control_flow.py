@@ -171,6 +171,9 @@ class NumericControlFlowModule:
         # 检查无效赋值导致的死循环（独立检测）
         self._check_ineffective_assignment(line_content, line_num, parsed_data, reported_issues)
         
+        # 检测潜在的无限循环 - 循环变量在循环体内未被修改
+        self._detect_potential_infinite_loops(line_content, line_num, parsed_data, reported_issues)
+        
         # 数据流分析检测复杂死循环
         self._check_dataflow_dead_loops(line_content, line_num, parsed_data, reported_issues)
     
@@ -783,3 +786,98 @@ class NumericControlFlowModule:
     def get_description(self) -> str:
         """获取模块描述"""
         return "检测类型溢出和死循环"
+    
+    def _detect_potential_infinite_loops(self, line_content: str, line_num: int, parsed_data: Dict[str, List], reported_issues: set):
+        """检测潜在的无限循环 - 循环变量在循环体内未被修改"""
+        # 检测while循环中的变量在循环体内未被修改
+        while_match = re.search(r'\bwhile\s*\(\s*([^)]+)\s*\)', line_content)
+        if while_match:
+            condition = while_match.group(1).strip()
+            # 提取条件中的变量
+            condition_vars = re.findall(r'\b([a-zA-Z_][a-zA-Z0-9_]*)\b', condition)
+            
+            # 检查这些变量在循环体内是否被修改
+            for var_name in condition_vars:
+                if var_name in ['true', 'false', 'NULL', 'sizeof', 'malloc', 'free']:
+                    continue
+                
+                # 查找循环体
+                loop_body_start = line_num
+                brace_count = 0
+                in_loop_body = False
+                
+                for i in range(line_num, len(parsed_data['lines'])):
+                    current_line = parsed_data['lines'][i]
+                    
+                    if '{' in current_line:
+                        brace_count += current_line.count('{')
+                        in_loop_body = True
+                    
+                    if in_loop_body:
+                        # 检查变量是否被修改
+                        if re.search(rf'\b{re.escape(var_name)}\s*=', current_line):
+                            break  # 变量被修改，不是死循环
+                        
+                        if '}' in current_line:
+                            brace_count -= current_line.count('}')
+                            if brace_count <= 0:
+                                # 循环结束，变量未被修改
+                                issue_key = f"infinite_loop_{var_name}_{line_num}"
+                                if issue_key not in reported_issues:
+                                    reported_issues.add(issue_key)
+                                    self.error_reporter.add_control_flow_error(
+                                        line_num,
+                                        f"while循环条件中的变量 '{var_name}' 在循环体内未被修改，可能导致死循环",
+                                        f"建议在循环体内修改 '{var_name}' 或添加break语句",
+                                        line_content
+                                    )
+                                break
+        
+        # 检测for循环中的变量在循环体内未被修改
+        for_match = re.search(r'\bfor\s*\(\s*([^;]+);\s*([^;]+);\s*([^)]+)\s*\)', line_content)
+        if for_match:
+            init_part = for_match.group(1).strip()
+            condition_part = for_match.group(2).strip()
+            increment_part = for_match.group(3).strip()
+            
+            # 提取条件中的变量
+            condition_vars = re.findall(r'\b([a-zA-Z_][a-zA-Z0-9_]*)\b', condition_part)
+            
+            # 检查这些变量在循环体内是否被修改
+            for var_name in condition_vars:
+                if var_name in ['true', 'false', 'NULL', 'sizeof', 'malloc', 'free']:
+                    continue
+                
+                # 检查增量部分是否包含该变量
+                if var_name not in increment_part:
+                    # 查找循环体
+                    loop_body_start = line_num
+                    brace_count = 0
+                    in_loop_body = False
+                    
+                    for i in range(line_num, len(parsed_data['lines'])):
+                        current_line = parsed_data['lines'][i]
+                        
+                        if '{' in current_line:
+                            brace_count += current_line.count('{')
+                            in_loop_body = True
+                        
+                        if in_loop_body:
+                            # 检查变量是否被修改
+                            if re.search(rf'\b{re.escape(var_name)}\s*=', current_line):
+                                break  # 变量被修改，不是死循环
+                            
+                            if '}' in current_line:
+                                brace_count -= current_line.count('}')
+                                if brace_count <= 0:
+                                    # 循环结束，变量未被修改
+                                    issue_key = f"infinite_for_loop_{var_name}_{line_num}"
+                                    if issue_key not in reported_issues:
+                                        reported_issues.add(issue_key)
+                                        self.error_reporter.add_control_flow_error(
+                                            line_num,
+                                            f"for循环条件中的变量 '{var_name}' 在循环体内未被修改，可能导致死循环",
+                                            f"建议在循环体内修改 '{var_name}' 或添加break语句",
+                                            line_content
+                                        )
+                                    break

@@ -5,6 +5,8 @@ import re
 from typing import Dict, List, Set, Optional, Tuple
 from utils.error_reporter import ErrorReporter
 from utils.code_parser import CCodeParser, VariableInfo
+from .scope_analyzer import ScopeAnalyzer
+from .cfg_analyzer import CFGAnalyzer
 
 
 class ImprovedMemorySafetyModule:
@@ -13,12 +15,24 @@ class ImprovedMemorySafetyModule:
     def __init__(self):
         self.error_reporter = ErrorReporter()
         self.parser = CCodeParser()
+        self.scope_analyzer = ScopeAnalyzer()
+        self.cfg_analyzer = CFGAnalyzer()
         
         # 维护内存状态
         self.malloced_variables: Set[str] = set()
         self.freed_variables: Set[str] = set()
+        self.declared_pointers: Dict[str, Dict] = {}  # 声明的指针变量信息
         self.memory_allocations: Dict[str, Dict] = {}  # 详细的内存分配信息
         self.function_returns: Dict[str, List[str]] = {}  # 函数返回的变量
+        
+        # 过程间分析 - 函数行为摘要
+        self.function_summaries: Dict[str, Dict] = {}  # 函数行为摘要
+        self.function_return_states: Dict[str, str] = {}  # 函数返回值状态
+        self.tainted_variables: Dict[str, str] = {}  # 被污染的变量及其污染源
+        
+        # 错误聚合机制
+        self.reported_pointers: Set[str] = set()  # 已报告的指针，避免重复报告
+        self.pointer_usage_locations: Dict[str, List[int]] = {}  # 指针使用位置记录
         
         # 改进的正则表达式模式
         self.patterns = {
@@ -27,7 +41,12 @@ class ImprovedMemorySafetyModule:
             'realloc': re.compile(r'\b(\w+)\s*=\s*realloc\s*\([^)]+\)', re.MULTILINE),
             'free': re.compile(r'\bfree\s*\([^)]*(\w+)[^)]*\)', re.MULTILINE),
             'free_call': re.compile(r'\bfree\s*\([^)]*(\w+)[^)]*\)', re.MULTILINE),
-            'pointer_dereference': re.compile(r'\b(\w+)\s*->\s*\w+', re.MULTILINE),
+            'pointer_dereference': re.compile(r'\*(\w+)|\b(\w+)\s*->\s*\w+', re.MULTILINE),
+            'array_access': re.compile(r'\b(\w+)\s*\[\s*[^]]+\s*\]', re.MULTILINE),  # ptr[index]
+            'double_pointer_deref': re.compile(r'\*\*(\w+)', re.MULTILINE),  # **ptr
+            'pointer_declaration': re.compile(r'\b(static\s+)?(const\s+)?(int|char|float|double|long|short|unsigned|signed|void|bool|struct\s+\w+)\s*\*+\s*(\w+)\s*[;=]', re.MULTILINE),
+            'struct_pointer_declaration': re.compile(r'\b(struct\s+\w+\s*\*+\s*(\w+)|(\w+)\s*\*+\s*(\w+))\s*[;=]', re.MULTILINE),
+            'flexible_struct_pointer': re.compile(r'\bstruct\s+\w+\s*\*+\s*(\w+)\s*[;=]', re.MULTILINE),
             'function_def': re.compile(r'\w+\s+(\w+)\s*\([^)]*\)\s*{', re.MULTILINE),
             'return_statement': re.compile(r'\breturn\s+([^;]+);', re.MULTILINE),
             'function_call': re.compile(r'\b(\w+)\s*=\s*(\w+)\s*\([^)]*\)', re.MULTILINE),
@@ -40,19 +59,107 @@ class ImprovedMemorySafetyModule:
         # 重置状态
         self.malloced_variables.clear()
         self.freed_variables.clear()
+        self.declared_pointers.clear()
         self.memory_allocations.clear()
         self.function_returns.clear()
+        self.reported_pointers.clear()
+        self.pointer_usage_locations.clear()
+        self.function_summaries.clear()
+        self.function_return_states.clear()
+        self.tainted_variables.clear()
         
-        # 第一阶段：识别内存分配和释放
+        # 第一阶段：作用域分析和变量识别
+        self.scope_variables = self.scope_analyzer.analyze(parsed_data)
+        self._identify_pointer_declarations(parsed_data)
         self._identify_memory_operations(parsed_data)
         
-        # 第二阶段：分析函数间的内存传递
+        # 第二阶段：控制流图分析
+        cfg_result = self.cfg_analyzer.analyze(parsed_data)
+        self.cfg = cfg_result['cfg']
+        
+        # 第三阶段：分析函数间的内存传递和函数行为摘要
+        self._analyze_function_summaries(parsed_data)
         self._analyze_interprocedural_memory(parsed_data)
         
-        # 第三阶段：检测内存问题
+        # 第四阶段：检测内存问题
         self._detect_memory_issues(parsed_data)
         
         return self.error_reporter.get_reports()
+    
+    def _is_function_parameter_pointer(self, ptr_name: str, current_line: int, parsed_data: Dict[str, List]) -> bool:
+        """检查指针是否是函数参数"""
+        # 向上查找函数定义
+        for i in range(current_line - 1, -1, -1):
+            if i < len(parsed_data['lines']):
+                line = parsed_data['lines'][i]
+                # 查找函数定义
+                func_match = re.search(r'\w+\s+(\w+)\s*\(([^)]*)\)', line)
+                if func_match:
+                    params_str = func_match.group(2)
+                    # 检查参数列表中是否包含这个指针
+                    if ptr_name in params_str and '*' in params_str:
+                        return True
+                    break  # 找到函数定义就停止
+                # 如果遇到另一个函数定义或到达文件开头，停止搜索
+                if '{' in line and '}' not in line:
+                    break
+        return False
+    
+    def _is_linked_list_traversal_pattern(self, var_name: str, line_content: str, parsed_data: Dict[str, List], line_num: int) -> bool:
+        """检查是否是链表遍历的标准模式，避免误报"""
+        # 检查是否是标准的链表遍历模式：Edge* nx = e->next; free(e); e = nx;
+        # 或者类似的模式：Node* next = current->next; free(current); current = next;
+        
+        # 模式1：检查当前行是否包含 ->next 访问
+        if '->next' in line_content and var_name in line_content:
+            # 检查前后几行是否有对应的free和赋值模式
+            for offset in range(-3, 4):  # 检查前后3行
+                check_line_num = line_num + offset
+                if 1 <= check_line_num <= len(parsed_data['lines']):
+                    check_line = parsed_data['lines'][check_line_num - 1]
+                    
+                    # 检查是否有 free(var_name) 模式
+                    if f'free({var_name})' in check_line:
+                        # 检查是否有 var_name = next_var 模式
+                        for offset2 in range(-2, 3):
+                            check_line_num2 = line_num + offset2
+                            if 1 <= check_line_num2 <= len(parsed_data['lines']):
+                                check_line2 = parsed_data['lines'][check_line_num2 - 1]
+                                if f'{var_name} =' in check_line2 and 'next' in check_line2:
+                                    return True
+        
+        # 模式2：检查是否是 while 循环中的链表遍历
+        if 'while' in line_content and var_name in line_content:
+            # 查找循环体中的free模式
+            for i in range(line_num, min(line_num + 10, len(parsed_data['lines']))):
+                if i < len(parsed_data['lines']):
+                    loop_line = parsed_data['lines'][i]
+                    if f'free({var_name})' in loop_line:
+                        # 检查循环体中是否有赋值操作
+                        for j in range(i + 1, min(i + 5, len(parsed_data['lines']))):
+                            if j < len(parsed_data['lines']):
+                                assign_line = parsed_data['lines'][j]
+                                if f'{var_name} =' in assign_line and '->next' in assign_line:
+                                    return True
+        
+        return False
+    
+    def _identify_pointer_declarations(self, parsed_data: Dict[str, List]):
+        """识别指针变量声明 - 使用作用域分析结果"""
+        # 使用作用域分析器已经识别的变量
+        for var_name, var_info in self.scope_variables.items():
+            if var_info.get('is_pointer', False):
+                self.declared_pointers[var_name] = {
+                    'type': var_info['type'],
+                    'line': var_info['line'],
+                    'is_static': var_info['is_static'],
+                    'is_const': var_info['is_const'],
+                    'is_initialized': var_info['is_initialized'],
+                    'line_content': var_info['line_content'],
+                    'scope_level': var_info['scope_level'],
+                    'scope_type': var_info['scope_type'],
+                    'scope_path': var_info['scope_path']
+                }
     
     def _identify_memory_operations(self, parsed_data: Dict[str, List]):
         """识别内存分配和释放操作"""
@@ -110,13 +217,101 @@ class ImprovedMemorySafetyModule:
                         if var_name in self.malloced_variables:
                             self.function_returns[current_function].append(var_name)
     
+    def _analyze_function_summaries(self, parsed_data: Dict[str, List]):
+        """分析函数行为摘要，生成函数返回值状态信息"""
+        
+        current_function = None
+        function_start_line = 0
+        brace_count = 0
+        
+        for line_num, line_content in enumerate(parsed_data['lines'], 1):
+            # 检测函数定义
+            func_match = re.search(r'(\w+\s+)?(\w+)\s*\([^)]*\)\s*{', line_content)
+            if func_match:
+                current_function = func_match.group(2)
+                function_start_line = line_num
+                brace_count = 1
+                
+                # 初始化函数摘要
+                self.function_summaries[current_function] = {
+                    'start_line': line_num,
+                    'end_line': 0,
+                    'declared_pointers': [],
+                    'uninitialized_pointers': [],
+                    'return_statements': [],
+                    'returns_uninitialized_pointer': False
+                }
+                continue
+            
+            if current_function and brace_count > 0:
+                # 更新大括号计数
+                brace_count += line_content.count('{') - line_content.count('}')
+                
+                # 检测指针声明
+                pointer_matches = self.patterns['pointer_declaration'].findall(line_content)
+                for static_qualifier, const_qualifier, var_type, var_name in pointer_matches:
+                    is_initialized = '=' in line_content
+                    
+                    self.function_summaries[current_function]['declared_pointers'].append({
+                        'name': var_name,
+                        'type': var_type,
+                        'line': line_num,
+                        'is_initialized': is_initialized,
+                        'is_static': bool(static_qualifier),
+                        'is_const': bool(const_qualifier)
+                    })
+                    
+                    # 如果未初始化，记录为潜在的未初始化指针
+                    if not is_initialized and not static_qualifier:
+                        self.function_summaries[current_function]['uninitialized_pointers'].append(var_name)
+                
+                # 检测return语句
+                return_matches = self.patterns['return_statement'].findall(line_content)
+                for return_expr in return_matches:
+                    return_expr = return_expr.strip()
+                    self.function_summaries[current_function]['return_statements'].append({
+                        'line': line_num,
+                        'expression': return_expr,
+                        'line_content': line_content.strip()
+                    })
+                    
+                    # 分析返回的是否是未初始化指针
+                    var_matches = re.findall(r'\b([a-zA-Z_][a-zA-Z0-9_]*)\b', return_expr)
+                    for var_name in var_matches:
+                        if var_name in self.function_summaries[current_function]['uninitialized_pointers']:
+                            self.function_summaries[current_function]['returns_uninitialized_pointer'] = True
+                            self.function_return_states[current_function] = 'uninitialized_pointer'
+                            break
+                
+                # 函数结束
+                if brace_count == 0:
+                    self.function_summaries[current_function]['end_line'] = line_num
+                    current_function = None
+    
     def _analyze_interprocedural_memory(self, parsed_data: Dict[str, List]):
         """分析函数间的内存传递"""
         
-        # 分析函数调用中的内存传递
+        # 分析函数调用中的内存传递和返回值污染
         for line_num, line_content in enumerate(parsed_data['lines'], 1):
             func_call_matches = self.patterns['function_call'].findall(line_content)
             for assigned_var, func_name in func_call_matches:
+                # 检查函数是否返回未初始化指针
+                if func_name in self.function_return_states:
+                    if self.function_return_states[func_name] == 'uninitialized_pointer':
+                        # 污染接收返回值的变量
+                        self.tainted_variables[assigned_var] = f"函数 {func_name} 返回未初始化指针"
+                        
+                        # 同时将其标记为声明的指针（用于后续检测）
+                        self.declared_pointers[assigned_var] = {
+                            'type': 'int',  # 假设类型，实际应该从函数签名推断
+                            'line': line_num,
+                            'is_static': False,
+                            'is_const': False,
+                            'is_initialized': False,  # 关键：标记为未初始化
+                            'line_content': line_content.strip(),
+                            'taint_source': func_name
+                        }
+                
                 if func_name in self.function_returns:
                     # 这个函数返回了分配的内存
                     returned_vars = self.function_returns[func_name]
@@ -270,39 +465,176 @@ class ImprovedMemorySafetyModule:
         for line_num, line_content in enumerate(parsed_data['lines'], 1):
             # 检测指针解引用
             deref_matches = self.patterns['pointer_dereference'].findall(line_content)
-            for ptr_name in deref_matches:
-                if ptr_name in self.freed_variables:
-                    self.error_reporter.add_memory_error(
-                        line_num,
-                        f"指针 '{ptr_name}' 已被释放，但仍在被使用（野指针）",
-                        "建议在free后设置指针为NULL：free(ptr); ptr = NULL;",
-                        line_content.strip()
-                    )
-    
-    def _detect_uninitialized_pointer_dereference(self, parsed_data: Dict[str, List]):
-        """检测未初始化指针解引用"""
-        
-        for line_num, line_content in enumerate(parsed_data['lines'], 1):
-            # 检测指针解引用
-            deref_matches = self.patterns['pointer_dereference'].findall(line_content)
-            for ptr_name in deref_matches:
-                # 检查指针是否已分配内存
-                if ptr_name not in self.malloced_variables and ptr_name not in self.freed_variables:
-                    # 检查前面几行是否有NULL检查
-                    has_null_check = False
-                    for i in range(max(0, line_num - 5), line_num):
-                        if i < len(parsed_data['lines']):
-                            prev_line = parsed_data['lines'][i]
-                            if f'{ptr_name}' in prev_line and ('NULL' in prev_line or 'null' in prev_line):
-                                has_null_check = True
-                                break
+            for match in deref_matches:
+                # 处理两种匹配模式：*ptr 或 ptr->member
+                ptr_name = match[0] if match[0] else match[1]
+                if not ptr_name:
+                    continue
                     
-                    if not has_null_check:
-                        # 只报告内存安全问题，避免与变量状态监察官重复
+                if ptr_name in self.freed_variables:
+                    # 检查是否是链表遍历的标准模式
+                    if not self._is_linked_list_traversal_pattern(ptr_name, line_content, parsed_data, line_num):
                         self.error_reporter.add_memory_error(
                             line_num,
-                            f"内存安全问题：解引用未初始化指针 '{ptr_name}'",
-                            f"建议在使用前初始化指针：{ptr_name} = malloc(size); 或 {ptr_name} = NULL;",
+                            f"指针 '{ptr_name}' 已被释放，但仍在被使用（野指针）",
+                            "建议在free后设置指针为NULL：free(ptr); ptr = NULL;",
+                            line_content.strip()
+                        )
+    
+    def _detect_uninitialized_pointer_dereference(self, parsed_data: Dict[str, List]):
+        """检测未初始化指针解引用 - 增强版本支持循环和函数调用"""
+        
+        # 跟踪当前函数和循环上下文
+        current_function = None
+        in_loop = False
+        loop_depth = 0
+        
+        # print(f"[DEBUG] 总共有 {len(parsed_data['lines'])} 行代码")
+        for line_num, line_content in enumerate(parsed_data['lines'], 1):
+            # print(f"[DEBUG] 原始第{line_num}行: {repr(line_content)}")
+            
+            
+            # 跳过声明行和初始化行 - 更精确的匹配
+            # 匹配类似 "int *ptr;" 或 "static char *str = NULL;" 的声明
+            if re.search(r'^\s*(static\s+)?(const\s+)?(int|char|float|double|long|short|unsigned|signed|void|bool|struct\s+\w+)\s*\*\s*\w+\s*[;=]', line_content):
+                # print(f"[DEBUG] 跳过指针声明行: {line_num}")
+                continue
+            
+            # 跳过结构体指针声明行 - 处理更灵活的格式
+            if re.search(r'^\s*(struct\s+\w+\s*\*+\s*\w+|\w+\s*\*+\s*\w+)\s*[;=]', line_content):
+                # print(f"[DEBUG] 跳过结构体指针声明行: {line_num}")
+                continue
+            
+            # 检测函数定义
+            func_match = re.search(r'\w+\s+(\w+)\s*\([^)]*\)\s*{', line_content)
+            if func_match:
+                current_function = func_match.group(1)
+                continue
+            
+            # 检测循环开始
+            if re.search(r'\b(for|while|do)\s*\(', line_content):
+                in_loop = True
+                loop_depth += 1
+                # print(f"[DEBUG] 检测到循环开始，第{line_num}行，深度: {loop_depth}")
+            
+            # 检测循环结束（简化版本）- 先处理内容，再检测结束
+            loop_ending = False
+            if in_loop and '}' in line_content:
+                loop_ending = True
+            
+            # print(f"[DEBUG] 第{line_num}行处理: in_loop={in_loop}, 内容: {line_content.strip()}")
+                
+            # 检测指针解引用 (*ptr 或 ptr->member)
+            deref_matches = self.patterns['pointer_dereference'].findall(line_content)
+            for match in deref_matches:
+                # 处理两种匹配模式：*ptr 或 ptr->member
+                ptr_name = match[0] if match[0] else match[1]
+                if not ptr_name:
+                    continue
+                
+                self._check_pointer_safety(ptr_name, line_num, line_content, "解引用")
+            
+            # 检测数组访问 (ptr[index])
+            array_matches = self.patterns['array_access'].findall(line_content)
+            # if array_matches:
+            #     print(f"[DEBUG] 第{line_num}行发现数组访问: {array_matches}, 内容: {line_content.strip()}")
+            for ptr_name in array_matches:
+                if ptr_name:
+                    # print(f"[DEBUG] 检测到数组访问: {ptr_name} 在第{line_num}行，是否已声明: {ptr_name in self.declared_pointers}")
+                    self._check_pointer_safety(ptr_name, line_num, line_content, "数组访问")
+            
+            # 检测双重指针解引用 (**ptr)
+            double_matches = self.patterns['double_pointer_deref'].findall(line_content)
+            for ptr_name in double_matches:
+                if ptr_name:
+                    self._check_pointer_safety(ptr_name, line_num, line_content, "双重指针解引用")
+            
+            # 检测函数调用中的野指针参数
+            func_call_matches = re.findall(r'\b(\w+)\s*\(([^)]*)\)', line_content)
+            for func_name, params in func_call_matches:
+                if func_name not in ['printf', 'scanf', 'malloc', 'free', 'calloc', 'realloc']:
+                    # 检查参数中的指针
+                    param_vars = re.findall(r'\b(\w+)\b', params)
+                    for param_var in param_vars:
+                        if param_var in self.declared_pointers:
+                            self._check_pointer_safety(param_var, line_num, line_content, f"函数调用参数传递给{func_name}")
+            
+            # 处理循环结束
+            if loop_ending:
+                loop_depth -= 1
+                # print(f"[DEBUG] 检测到循环结束，第{line_num}行，深度: {loop_depth}")
+                if loop_depth <= 0:
+                    in_loop = False
+                    loop_depth = 0
+    
+    def _check_pointer_safety(self, ptr_name: str, line_num: int, line_content: str, access_type: str):
+        """检查指针安全性的通用方法 - 带错误聚合和污染追踪，使用作用域分析"""
+        # 检查指针是否已分配内存或已初始化
+        is_allocated = ptr_name in self.malloced_variables
+        is_freed = ptr_name in self.freed_variables
+        is_tainted = ptr_name in self.tainted_variables
+        
+        # 使用作用域分析器找到正确的变量定义
+        var_info = self.scope_analyzer.find_variable_in_scope(ptr_name, line_num)
+        is_declared_pointer = var_info is not None and var_info.get('is_pointer', False)
+        
+        # print(f"[DEBUG] 检查指针 {ptr_name}: allocated={is_allocated}, freed={is_freed}, declared={is_declared_pointer}, tainted={is_tainted}")
+        
+        # 优先检查被污染的变量（函数返回的未初始化指针）
+        if is_tainted:
+            # 错误聚合：记录使用位置，但只在第一次使用时报告
+            if ptr_name not in self.pointer_usage_locations:
+                self.pointer_usage_locations[ptr_name] = []
+            self.pointer_usage_locations[ptr_name].append(line_num)
+            
+            # 只在第一次检测到该指针的问题时报告
+            if ptr_name not in self.reported_pointers:
+                self.reported_pointers.add(ptr_name)
+                
+                # 生成聚合的错误消息
+                usage_lines = self.pointer_usage_locations[ptr_name]
+                usage_info = f"（使用位置：第{', '.join(map(str, usage_lines))}行）" if len(usage_lines) > 1 else ""
+                
+                taint_source = self.tainted_variables[ptr_name]
+                self.error_reporter.add_memory_error(
+                    line_num,
+                    f"野指针问题：{taint_source}，变量 '{ptr_name}' 在多处被使用{usage_info}",
+                    f"建议检查函数 {self.declared_pointers.get(ptr_name, {}).get('taint_source', 'unknown')} 的实现，确保返回有效指针",
+                    line_content
+                )
+            return
+        
+        if is_declared_pointer and not is_allocated and not is_freed:
+            # 使用作用域分析的结果
+            if var_info['is_initialized'] and not var_info['is_static']:
+                return
+            
+            # 错误聚合：记录使用位置，但只在第一次使用时报告
+            if ptr_name not in self.pointer_usage_locations:
+                self.pointer_usage_locations[ptr_name] = []
+            self.pointer_usage_locations[ptr_name].append(line_num)
+            
+            # 只在第一次检测到该指针的问题时报告
+            if ptr_name not in self.reported_pointers:
+                self.reported_pointers.add(ptr_name)
+                
+                # 生成聚合的错误消息
+                usage_lines = self.pointer_usage_locations[ptr_name]
+                usage_info = f"（使用位置：第{', '.join(map(str, usage_lines))}行）" if len(usage_lines) > 1 else ""
+                
+                # 报告野指针问题
+                if var_info['is_static']:
+                    self.error_reporter.add_memory_error(
+                        usage_lines[0],  # 使用第一次使用的行号
+                        f"野指针问题：static指针 '{ptr_name}' 默认为NULL，多处使用将导致段错误{usage_info}",
+                        f"建议在使用前初始化指针：{ptr_name} = malloc(sizeof({var_info['type']})); 或添加NULL检查",
+                        line_content.strip()
+                    )
+                else:
+                    self.error_reporter.add_memory_error(
+                        usage_lines[0],  # 使用第一次使用的行号
+                        f"野指针问题：未初始化指针 '{ptr_name}' 在多处被使用{usage_info}",
+                        f"建议在使用前初始化指针：{ptr_name} = malloc(sizeof({var_info['type']})); 或 {ptr_name} = NULL;",
                             line_content.strip()
                         )
     

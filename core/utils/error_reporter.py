@@ -108,6 +108,10 @@ class ErrorReporter:
         )
         self.add_report(report)
     
+    def add_control_flow_error(self, line_num: int, message: str, suggestion: str, code_snippet: str = ""):
+        """添加控制流错误（别名方法）"""
+        self.add_numeric_error(line_num, message, suggestion, code_snippet)
+    
     def get_reports(self) -> List[BugReport]:
         """获取所有错误报告"""
         return self.reports

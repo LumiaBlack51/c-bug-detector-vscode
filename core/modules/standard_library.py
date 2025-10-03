@@ -455,8 +455,9 @@ class StandardLibraryModule:
         if re.match(r'^[a-zA-Z_][a-zA-Z0-9_]*$', format_string):
             return  # 格式字符串是变量，无法静态分析
             
-        # 计算格式说明符数量 - 支持长度修饰符
-        format_specifiers = re.findall(r'%l?l?[diouxXeEfFgGaAcspn%]', format_string)
+        # 计算格式说明符数量 - 改进版本，支持完整的printf格式
+        # 支持: %[flags][width][.precision][length]specifier
+        format_specifiers = re.findall(r'%[+-]?[0-9]*\.?[0-9]*[hlL]?[diouxXeEfFgGaAcspn]', format_string)
         # 排除 %% 转义字符
         format_specifiers = [spec for spec in format_specifiers if spec != '%%']
         
@@ -593,7 +594,13 @@ class StandardLibraryModule:
         """推断参数类型"""
         # 检查是否是已知变量
         if param in self._global_variables:
-            param_type = self._global_variables[param]['type']
+            var_info = self._global_variables[param]
+            param_type = var_info['type']
+            
+            # 如果是指针类型，添加*后缀
+            if var_info.get('is_pointer', False) and not param_type.endswith('*'):
+                param_type += '*'
+            
             return param_type
         
         # 检查是否是字面量

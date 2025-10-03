@@ -10,8 +10,12 @@ from colorama import init, Fore, Style
 
 # 强制设置UTF-8编码
 import io
-sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
-sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
+import os
+# 设置环境变量强制UTF-8
+os.environ['PYTHONIOENCODING'] = 'utf-8'
+# 重新包装标准输出和错误输出
+sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
+sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
 
 # 初始化colorama
 init()
@@ -49,8 +53,8 @@ class CBugDetector:
         # 模块启用状态
         self.module_enabled = {
             'ast_memory_tracker': True,
-            'memory_safety': False,  # 禁用旧的内存检测器
-            'variable_state': False,  # 禁用旧的变量状态检测器
+            'memory_safety': True,  # 启用改进的内存检测器
+            'variable_state': True,  # 启用改进的变量状态检测器
             'standard_library': True,
             'numeric_control_flow': True,
         }
