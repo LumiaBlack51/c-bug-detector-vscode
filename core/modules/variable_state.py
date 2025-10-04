@@ -565,9 +565,9 @@ class VariableStateModule:
                 current_scope = brace_count
     
     def get_module_name(self) -> str:
-        """获取模块名称"""
-        return "变量状态监察官"
+        """Get module name"""
+        return "Variable State Inspector"
     
     def get_description(self) -> str:
-        """获取模块描述"""
-        return "检测变量未初始化即使用和变量作用域问题"
+        """Get module description"""
+        return "Detect uninitialized variables and variable scope issues"

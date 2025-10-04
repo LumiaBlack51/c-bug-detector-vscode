@@ -24,8 +24,8 @@ class LibClangSemanticAnalyzer:
         self.current_file: str = ""
         
     def get_module_name(self):
-        """返回模块名称"""
-        return "libclang语义分析器"
+        """Return module name"""
+        return "LibClang Semantic Analyzer"
     
     def analyze_file(self, file_path: str) -> List[BugReport]:
         """分析C文件中的语义问题"""

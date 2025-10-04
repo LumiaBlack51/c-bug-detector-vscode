@@ -26,8 +26,8 @@ class LibClangPrintfDetector:
         self.current_file: str = ""
         
     def get_module_name(self):
-        """返回模块名称"""
-        return "libclang printf检测器"
+        """Return module name"""
+        return "LibClang Printf Detector"
     
     def analyze_file(self, file_path: str) -> List[BugReport]:
         """分析C文件中的printf格式字符串问题"""

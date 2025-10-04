@@ -22,7 +22,7 @@ class ReportGenerator:
             return "未检测到任何问题。"
         
         report_lines = []
-        report_lines.append(f"检测到 {len(issues)} 个问题：\n")
+        report_lines.append(f"Detected {len(issues)} issue(s):\n")
         
         # 按错误类型分组
         issues_by_type = self._group_issues_by_type(issues)
@@ -75,7 +75,7 @@ class ReportGenerator:
             return "未检测到任何问题。"
         
         report_lines = []
-        report_lines.append(f"检测到 {len(issues)} 个问题：\n")
+        report_lines.append(f"Detected {len(issues)} issue(s):\n")
         
         for i, issue in enumerate(issues, 1):
             report_lines.append("=" * 60)

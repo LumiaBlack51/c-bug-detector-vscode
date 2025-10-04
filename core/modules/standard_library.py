@@ -770,9 +770,9 @@ class StandardLibraryModule:
         return type_map.get(format_spec, ['unknown'])
     
     def get_module_name(self) -> str:
-        """获取模块名称"""
-        return "标准库使用助手"
+        """Get module name"""
+        return "Standard Library Usage Helper"
     
     def get_description(self) -> str:
-        """获取模块描述"""
-        return "检测缺失头文件、头文件拼写错误，检查常用函数参数"
+        """Get module description"""
+        return "Detect missing headers, spelling errors, check common function parameters"

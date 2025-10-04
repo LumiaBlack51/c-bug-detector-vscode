@@ -17,8 +17,8 @@ class ImprovedVariableStateModule:
         self.variable_states: Dict[str, Dict] = {}
     
     def get_module_name(self):
-        """返回模块名称"""
-        return "改进的变量状态监察官"
+        """Return module name"""
+        return "Improved Variable State Inspector"
     
     def analyze(self, parsed_data: Dict[str, List]) -> List:
         """分析变量状态问题 - 重构版本，专注非指针变量状态分析"""

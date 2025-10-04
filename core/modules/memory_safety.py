@@ -302,9 +302,9 @@ class MemorySafetyModule:
                         )
     
     def get_module_name(self) -> str:
-        """获取模块名称"""
-        return "内存安全卫士"
+        """Get module name"""
+        return "Memory Safety Guard"
     
     def get_description(self) -> str:
-        """获取模块描述"""
-        return "检测内存泄漏、野指针、空指针解引用等内存安全问题"
+        """Get module description"""
+        return "Detect memory leaks, wild pointers, null pointer dereferences"

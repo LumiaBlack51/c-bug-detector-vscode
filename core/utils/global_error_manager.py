@@ -77,7 +77,7 @@ class GlobalErrorManager:
                 # 如果新错误更严重，移除旧错误
                 if current_severity < reported_severity:
                     self.reported_errors.remove(reported_key)
-                    print(f"错误升级: {reported_key.error_type} -> {error_type} (行{line_number}, 变量{variable_name})")
+                    print(f"Error upgraded: {reported_key.error_type} -> {error_type} (line {line_number}, variable {variable_name})")
                 # 如果旧错误更严重，不报告新错误
                 elif reported_severity < current_severity:
                     print(f"错误抑制: {error_type} 被 {reported_key.error_type} 抑制 (行{line_number}, 变量{variable_name})")

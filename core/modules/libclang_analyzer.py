@@ -29,8 +29,8 @@ class LibClangAnalyzer:
         self.memory_deallocations: List[clang.cindex.Cursor] = []  # 内存释放调用
         
     def get_module_name(self):
-        """返回模块名称"""
-        return "libclang分析器"
+        """Return module name"""
+        return "LibClang Analyzer"
         
     def analyze_file(self, file_path: str) -> List[BugReport]:
         """分析C文件并返回检测结果"""
@@ -437,7 +437,7 @@ int main() {
     
     try:
         reports = analyzer.analyze_file("test_libclang.c")
-        print(f"检测到 {len(reports)} 个问题:")
+        print(f"Detected {len(reports)} issue(s):")
         for report in reports:
             print(f"  Line {report.line_number}: {report.message}")
     finally:

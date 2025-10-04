@@ -780,12 +780,12 @@ class NumericControlFlowModule:
         return False
     
     def get_module_name(self) -> str:
-        """获取模块名称"""
-        return "数值与控制流分析器"
+        """Get module name"""
+        return "Numeric & Control Flow Analyzer"
     
     def get_description(self) -> str:
-        """获取模块描述"""
-        return "检测类型溢出和死循环"
+        """Get module description"""
+        return "Detect type overflows and infinite loops"
     
     def _detect_potential_infinite_loops(self, line_content: str, line_num: int, parsed_data: Dict[str, List], reported_issues: set):
         """检测潜在的无限循环 - 循环变量在循环体内未被修改"""

@@ -101,7 +101,7 @@ class CBugDetector:
             all_issues = []
             for module_name, module in self.modules.items():
                 if self.module_enabled[module_name]:
-                    print(f"{Fore.GREEN}运行模块: {module.get_module_name()}{Style.RESET_ALL}")
+                    print(f"{Fore.GREEN}Running module: {module.get_module_name()}{Style.RESET_ALL}")
                     try:
                         # libclang分析器、printf检测器、语义分析器和增强内存安全模块使用analyze_file方法
                         if module_name in ['libclang_analyzer', 'libclang_printf', 'libclang_semantic', 'enhanced_memory_safety']:
@@ -184,7 +184,7 @@ class CBugDetector:
             all_reports = []
             for module_name, module in self.modules.items():
                 if self.module_enabled[module_name]:
-                    print(f"{Fore.GREEN}运行模块: {module.get_module_name()}{Style.RESET_ALL}")
+                    print(f"{Fore.GREEN}Running module: {module.get_module_name()}{Style.RESET_ALL}")
                     try:
                         # libclang分析器、printf检测器和语义分析器使用analyze_file方法
                         if module_name in ['libclang_analyzer', 'libclang_printf', 'libclang_semantic']:
@@ -266,13 +266,37 @@ class CBugDetector:
         if not reports:
             return []
         
-        # 使用字典来跟踪已见过的报告
+        # 第一步：按变量名分组，用于智能过滤
+        var_reports = {}  # {variable_name: [reports]}
+        for report in reports:
+            var_name = self._extract_variable_name(report.message)
+            if var_name:
+                if var_name not in var_reports:
+                    var_reports[var_name] = []
+                var_reports[var_name].append(report)
+        
+        # 第二步：对每个变量，过滤掉低优先级的报告
+        filtered_reports = []
+        for var_name, var_report_list in var_reports.items():
+            # 检查是否同时有内存泄漏和NULL检查警告
+            has_memory_leak = any('未释放' in r.message or 'memory leak' in r.message.lower() or '泄漏' in r.message 
+                                 for r in var_report_list)
+            
+            for report in var_report_list:
+                # 如果存在内存泄漏，跳过NULL检查警告（降低噪音）
+                if has_memory_leak and ('未检查返回值' in report.message or 'NULL检查' in report.message):
+                    continue
+                filtered_reports.append(report)
+        
+        # 添加没有变量名的报告
+        no_var_reports = [r for r in reports if not self._extract_variable_name(r.message)]
+        filtered_reports.extend(no_var_reports)
+        
+        # 第三步：使用原有去重逻辑
         seen_reports = {}
         deduplicated = []
         
-        for report in reports:
-            # 创建报告的唯一标识符：行号 + 问题类型 + 变量名
-            # 提取变量名（从消息中提取）
+        for report in filtered_reports:
             var_name = self._extract_variable_name(report.message)
             report_key = f"{report.line_number}_{report.error_type.value}_{var_name}"
             
@@ -280,10 +304,8 @@ class CBugDetector:
                 seen_reports[report_key] = report
                 deduplicated.append(report)
             else:
-                # 如果发现重复，选择更具体的报告（通常是内存安全卫士的报告）
                 existing_report = seen_reports[report_key]
                 if self._is_more_specific_report(report, existing_report):
-                    # 替换现有报告
                     deduplicated.remove(existing_report)
                     deduplicated.append(report)
                     seen_reports[report_key] = report
@@ -294,13 +316,17 @@ class CBugDetector:
         """从错误消息中提取变量名"""
         import re
         
-        # 匹配 "变量 'xxx' 在初始化前被使用" 或 "解引用未初始化指针 'xxx'"
+        # 匹配中英文的变量名模式
         patterns = [
             r"变量 '([^']+)'",
             r"指针 '([^']+)'",
             r"解引用未初始化指针 '([^']+)'",
             r"未初始化指针 '([^']+)'",
-            r"未声明指针 '([^']+)'"
+            r"未声明指针 '([^']+)'",
+            r"variable '([^']+)'",
+            r"pointer '([^']+)'",
+            r"Variable '([^']+)'",
+            r"Pointer '([^']+)'"
         ]
         
         for pattern in patterns:
@@ -312,17 +338,23 @@ class CBugDetector:
     
     def _is_more_specific_report(self, report1: BugReport, report2: BugReport) -> bool:
         """判断哪个报告更具体"""
-        # 内存安全卫士的报告通常比变量状态监察官的报告更具体
-        if "内存安全卫士" in report1.module_name and "变量状态监察官" in report2.module_name:
+        # Memory Safety Guard reports are usually more specific than Variable State Inspector
+        if "Memory Safety" in report1.module_name and "Variable State" in report2.module_name:
             return True
-        elif "变量状态监察官" in report1.module_name and "内存安全卫士" in report2.module_name:
+        elif "Variable State" in report1.module_name and "Memory Safety" in report2.module_name:
             return False
         
-        # 如果消息长度不同，选择更长的（通常更具体）
+        # 中文模块名兼容
+        if "内存安全" in report1.module_name and "变量状态" in report2.module_name:
+            return True
+        elif "变量状态" in report1.module_name and "内存安全" in report2.module_name:
+            return False
+        
+        # If message lengths differ, choose the longer one (usually more specific)
         if len(report1.message) != len(report2.message):
             return len(report1.message) > len(report2.message)
         
-        # 默认选择第一个
+        # Default: choose the first one
         return False
     
     def analyze_directory(self, directory_path: str) -> Dict[str, List[BugReport]]:

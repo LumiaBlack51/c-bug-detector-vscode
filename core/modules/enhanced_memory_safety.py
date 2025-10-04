@@ -34,7 +34,7 @@ class EnhancedMemorySafetyModule:
         }
     
     def get_module_name(self):
-        return "增强内存安全卫士"
+        return "Enhanced Memory Safety Guard"
     
     def analyze(self, parsed_data):
         """兼容性方法 - 调用analyze_file"""
@@ -206,4 +206,4 @@ class EnhancedMemorySafetyModule:
                 )
     
     def get_description(self):
-        return "增强的内存安全检测，使用正确的行号映射"
+        return "Enhanced memory safety detection with accurate line number mapping"

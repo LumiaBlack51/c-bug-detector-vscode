@@ -407,9 +407,9 @@ class CMemorySimulator:
         return self.error_reporter.get_reports()
     
     def get_module_name(self) -> str:
-        """获取模块名称"""
-        return "AST内存泄漏检测器"
+        """Get module name"""
+        return "AST Memory Leak Detector"
     
     def get_description(self) -> str:
-        """获取模块描述"""
-        return "基于C语言抽象语法树的内存泄漏检测，通过模拟程序执行跟踪内存分配和释放"
+        """Get module description"""
+        return "AST-based memory leak detection, tracks memory allocation and deallocation"

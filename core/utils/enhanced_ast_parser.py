@@ -96,7 +96,7 @@ class EnhancedASTParser:
             return self._convert_pycparser_ast(ast_root, original_file)
             
         except Exception as e:
-            print(f"pycparser解析失败: {e}")
+            print(f"pycparser parsing failed: {e}")
             return None
     
     def _convert_pycparser_ast(self, node: Any, original_file: str) -> Optional[ASTNode]:
