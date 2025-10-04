@@ -15,7 +15,7 @@ class Token:
     logical_file: str  # 逻辑文件名（原始文件）
     logical_line: int   # 逻辑行号（原始文件中的行号）
     physical_line: int  # 物理行号（预处理文件中的行号）
-    column: int
+    logical_column: int  # 逻辑列号（原始文件中的列号）
 
 class EnhancedLexer:
     """增强的词法分析器 - 支持#line指令"""
@@ -28,7 +28,7 @@ class EnhancedLexer:
         self.physical_line = 1
         self.logical_file = "unknown.c"
         self.logical_line = 1
-        self.column = 1
+        self.logical_column = 1
         
         # 词法单元列表
         self.tokens: List[Token] = []
@@ -53,7 +53,7 @@ class EnhancedLexer:
         
         for line_num, line in enumerate(self.lines, 1):
             self.physical_line = line_num
-            self.column = 1
+            self.logical_column = 1
             
             # 处理#line指令
             if self._handle_line_directive(line):
@@ -92,7 +92,7 @@ class EnhancedLexer:
             whitespace_match = self.patterns['whitespace'].match(line, pos)
             if whitespace_match:
                 pos += len(whitespace_match.group())
-                self.column += len(whitespace_match.group())
+                self.logical_column += len(whitespace_match.group())
                 continue
             
             # 尝试匹配各种词法单元
@@ -100,11 +100,11 @@ class EnhancedLexer:
             if token:
                 self.tokens.append(token)
                 pos += len(token.value)
-                self.column += len(token.value)
+                self.logical_column += len(token.value)
             else:
                 # 无法识别的字符，跳过
                 pos += 1
-                self.column += 1
+                self.logical_column += 1
     
     
     def _match_token(self, line: str, pos: int) -> Optional[Token]:
@@ -118,7 +118,7 @@ class EnhancedLexer:
                 logical_file=self.logical_file,
                 logical_line=self.logical_line,
                 physical_line=self.physical_line,
-                column=self.column
+                logical_column=self.logical_column
             )
         
         # 尝试匹配数字
@@ -130,7 +130,7 @@ class EnhancedLexer:
                 logical_file=self.logical_file,
                 logical_line=self.logical_line,
                 physical_line=self.physical_line,
-                column=self.column
+                logical_column=self.logical_column
             )
         
         # 尝试匹配字符串
@@ -142,7 +142,7 @@ class EnhancedLexer:
                 logical_file=self.logical_file,
                 logical_line=self.logical_line,
                 physical_line=self.physical_line,
-                column=self.column
+                logical_column=self.logical_column
             )
         
         # 尝试匹配字符
@@ -154,7 +154,7 @@ class EnhancedLexer:
                 logical_file=self.logical_file,
                 logical_line=self.logical_line,
                 physical_line=self.physical_line,
-                column=self.column
+                logical_column=self.logical_column
             )
         
         # 尝试匹配操作符
@@ -166,7 +166,7 @@ class EnhancedLexer:
                 logical_file=self.logical_file,
                 logical_line=self.logical_line,
                 physical_line=self.physical_line,
-                column=self.column
+                logical_column=self.logical_column
             )
         
         # 尝试匹配标点符号
@@ -178,7 +178,7 @@ class EnhancedLexer:
                 logical_file=self.logical_file,
                 logical_line=self.logical_line,
                 physical_line=self.physical_line,
-                column=self.column
+                logical_column=self.logical_column
             )
         
         return None
@@ -188,6 +188,6 @@ class EnhancedLexer:
         return {
             'file': token.logical_file,
             'line': token.logical_line,
-            'column': token.column,
+            'column': token.logical_column,
             'physical_line': token.physical_line
         }

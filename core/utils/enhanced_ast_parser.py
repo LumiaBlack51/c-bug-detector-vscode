@@ -51,13 +51,14 @@ class EnhancedASTParser:
             AST根节点，包含正确的位置信息
         """
         self.current_file = file_path
+        temp_file_path = None
         
         try:
-            # 第一步：预处理
-            preprocessed_file, original_file = preprocessor.preprocess_file(file_path)
+            # 第一步：预处理并创建临时文件
+            temp_file_path, line_mapping = preprocessor.create_temp_preprocessed_file(file_path)
             
             # 第二步：读取预处理后的代码
-            with open(preprocessed_file, 'r', encoding='utf-8') as f:
+            with open(temp_file_path, 'r', encoding='utf-8') as f:
                 preprocessed_code = f.read()
             
             # 第三步：词法分析
@@ -67,16 +68,22 @@ class EnhancedASTParser:
             
             # 第四步：语法分析
             if C_AST_AVAILABLE:
-                return self._parse_with_pycparser(preprocessed_code, original_file)
+                return self._parse_with_pycparser(preprocessed_code, file_path)
             else:
                 return self._parse_with_simple_parser()
                 
         except Exception as e:
             print(f"解析文件失败: {e}")
+            import traceback
+            traceback.print_exc()
             return None
         finally:
             # 清理临时文件
-            preprocessor.cleanup()
+            if temp_file_path and os.path.exists(temp_file_path):
+                try:
+                    os.remove(temp_file_path)
+                except Exception:
+                    pass
     
     def _parse_with_pycparser(self, preprocessed_code: str, original_file: str) -> Optional[ASTNode]:
         """使用pycparser解析，但保持正确的位置信息"""
