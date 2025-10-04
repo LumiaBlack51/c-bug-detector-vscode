@@ -5,7 +5,6 @@ C语言Bug检测器主程序
 import os
 import sys
 import argparse
-import json
 from typing import List, Dict, Any
 from colorama import init, Fore, Style
 
@@ -29,15 +28,10 @@ from modules.variable_state_improved import ImprovedVariableStateModule
 from modules.memory_safety_improved import ImprovedMemorySafetyModule
 from modules.standard_library import StandardLibraryModule
 from modules.numeric_control_flow import NumericControlFlowModule
-from modules.libclang_printf_detector import LibClangPrintfDetector
 from modules.libclang_analyzer import LibClangAnalyzer
-from modules.libclang_semantic_analyzer import LibClangSemanticAnalyzer
-from modules.enhanced_memory_safety import EnhancedMemorySafetyModule
 
 # 导入工具类
 from utils.error_reporter import ErrorReporter, BugReport
-from utils.report_generator import ReportGenerator
-from utils.issue import Issue
 from utils.code_parser import CCodeParser
 
 
@@ -56,106 +50,17 @@ class CBugDetector:
             'standard_library': StandardLibraryModule(),
             'numeric_control_flow': NumericControlFlowModule(),
             'libclang_analyzer': LibClangAnalyzer(),
-            'libclang_printf': LibClangPrintfDetector(),
-            'libclang_semantic': LibClangSemanticAnalyzer(),
-            'enhanced_memory_safety': EnhancedMemorySafetyModule(),
         }
         
         # 模块启用状态
         self.module_enabled = {
             'ast_memory_tracker': True,
             'memory_safety': True,  # 启用改进的内存检测器
-            'variable_state': False,  # 禁用旧的变量状态检测器
-            'standard_library': False,  # 禁用旧的printf检测器
+            'variable_state': True,  # 启用改进的变量状态检测器
+            'standard_library': True,
             'numeric_control_flow': True,
-            'libclang_analyzer': True,  # 默认启用libclang分析器
-            'libclang_printf': True,  # 启用新的libclang printf检测器
-            'libclang_semantic': False,  # 暂时禁用语义分析器（有误报问题）
-            'enhanced_memory_safety': True,  # 启用增强内存安全模块（使用正确行号映射）
+            'libclang_analyzer': True,  # 启用libclang分析器
         }
-    
-    def analyze_file_new(self, file_path: str) -> List[Issue]:
-        """分析单个C文件 - 使用新架构"""
-        print(f"{Fore.CYAN}正在分析文件: {file_path}{Style.RESET_ALL}")
-        
-        # 检查文件是否存在
-        if not os.path.exists(file_path):
-            print(f"{Fore.RED}错误: 文件 {file_path} 不存在{Style.RESET_ALL}")
-            return []
-        
-        # 检查文件扩展名
-        if not file_path.endswith('.c'):
-            print(f"{Fore.YELLOW}警告: 文件 {file_path} 不是C文件(.c){Style.RESET_ALL}")
-        
-        try:
-            # 解析C代码
-            parsed_data = self.parser.parse_file(file_path)
-            if not parsed_data:
-                print(f"{Fore.RED}错误: 无法解析文件 {file_path}{Style.RESET_ALL}")
-                return []
-            
-            # 清空之前的报告
-            self.error_reporter.clear_reports()
-            
-            # 运行所有启用的模块并收集问题
-            all_issues = []
-            for module_name, module in self.modules.items():
-                if self.module_enabled[module_name]:
-                    print(f"{Fore.GREEN}运行模块: {module.get_module_name()}{Style.RESET_ALL}")
-                    try:
-                        # libclang分析器、printf检测器、语义分析器和增强内存安全模块使用analyze_file方法
-                        if module_name in ['libclang_analyzer', 'libclang_printf', 'libclang_semantic', 'enhanced_memory_safety']:
-                            if module_name == 'enhanced_memory_safety':
-                                # enhanced_memory_safety返回Issue对象
-                                issues = module.analyze_file(file_path)
-                            else:
-                                # 其他模块返回BugReport对象，需要转换
-                                reports = module.analyze_file(file_path)
-                                issues = []
-                                for report in reports:
-                                    issue = Issue(
-                                        issue_type=report.error_type,
-                                        severity=report.severity,
-                                        description=report.message,
-                                        suggestion=report.suggestion,
-                                        line_number=report.line_number,
-                                        variable_name=report.variable_name,
-                                        module_name=report.module_name,
-                                        error_category=report.error_category,
-                                        code_snippet=report.code_snippet
-                                    )
-                                    issues.append(issue)
-                            all_issues.extend(issues)
-                        else:
-                            # 为其他模块设置文件路径，用于代码片段提取
-                            if hasattr(module, 'error_reporter'):
-                                module.error_reporter.current_file = file_path
-                            reports = module.analyze(parsed_data)
-                            # 将BugReport转换为Issue对象
-                            for report in reports:
-                                issue = Issue(
-                                    issue_type=report.error_type,
-                                    severity=report.severity,
-                                    description=report.message,
-                                    suggestion=report.suggestion,
-                                    line_number=report.line_number,
-                                    variable_name=report.variable_name,
-                                    module_name=report.module_name,
-                                    error_category=report.error_category,
-                                    code_snippet=report.code_snippet
-                                )
-                                all_issues.append(issue)
-                    except Exception as e:
-                        print(f"{Fore.RED}模块 {module_name} 运行出错: {e}{Style.RESET_ALL}")
-            
-            # 按行号排序
-            all_issues.sort(key=lambda x: x.line_number)
-            
-            return all_issues
-            
-        except Exception as e:
-            print(f"{Fore.RED}分析文件时出错: {e}{Style.RESET_ALL}")
-            return []
     
     def analyze_file(self, file_path: str) -> List[BugReport]:
         """分析单个C文件"""
@@ -186,13 +91,10 @@ class CBugDetector:
                 if self.module_enabled[module_name]:
                     print(f"{Fore.GREEN}运行模块: {module.get_module_name()}{Style.RESET_ALL}")
                     try:
-                        # libclang分析器、printf检测器和语义分析器使用analyze_file方法
-                        if module_name in ['libclang_analyzer', 'libclang_printf', 'libclang_semantic']:
+                        # libclang分析器需要直接分析文件
+                        if module_name == 'libclang_analyzer':
                             reports = module.analyze_file(file_path)
                         else:
-                            # 为其他模块设置文件路径，用于代码片段提取
-                            if hasattr(module, 'error_reporter'):
-                                module.error_reporter.current_file = file_path
                             reports = module.analyze(parsed_data)
                         all_reports.extend(reports)
                     except Exception as e:
@@ -234,11 +136,8 @@ class CBugDetector:
             for module_name, module in self.modules.items():
                 if self.module_enabled[module_name]:
                     try:
-                        # libclang分析器、printf检测器和语义分析器使用analyze_file方法
-                        if module_name in ['libclang_analyzer', 'libclang_printf', 'libclang_semantic']:
-                            module_reports = module.analyze_file(file_path)
-                        else:
-                            module_reports = module.analyze(parsed_data)
+                        # 调用模块分析方法
+                        module_reports = module.analyze(parsed_data)
                         all_reports.extend(module_reports)
                     except Exception as e:
                         pass  # 静默忽略模块错误
@@ -414,7 +313,6 @@ def main():
     parser.add_argument('--enable', nargs='+', help='启用的模块列表')
     parser.add_argument('--list-modules', action='store_true', help='列出所有可用模块')
     parser.add_argument('--batch', action='store_true', help='批量检测模式：检测目录下所有C文件')
-    parser.add_argument('--old-arch', action='store_true', help='使用旧架构（备用选项）')
     
     args = parser.parse_args()
     
@@ -443,56 +341,20 @@ def main():
     # 分析文件或目录
     if args.input and os.path.isfile(args.input):
         # 单文件分析
-        # 默认使用新架构
-        issues = detector.analyze_file_new(args.input)
-        
-        # 创建报告生成器
-        from utils.report_generator import ReportGenerator
-        generator = ReportGenerator(args.input)
+        reports = detector.analyze_file(args.input) if args.format != 'json' else detector.analyze_file_quiet(args.input)
         
         if args.format == 'json':
-            # JSON格式输出
-            json_reports = generator.generate_json_report(issues)
-            print(json.dumps(json_reports, indent=2, ensure_ascii=False))
+            # JSON格式输出，不显示额外信息
+            print(detector.generate_report(reports, args.format))
         else:
-            # 文本格式输出
-            if issues:
-                print(f"\n{Fore.YELLOW}检测完成，共发现 {len(issues)} 个问题{Style.RESET_ALL}")
-                print(generator.generate_detailed_report(issues))
-                print("\n" + generator.generate_summary(issues))
+            if reports:
+                print(f"\n{Fore.YELLOW}检测完成，共发现 {len(reports)} 个问题{Style.RESET_ALL}")
+                print(detector.generate_report(reports, args.format))
             else:
                 print(f"{Fore.GREEN}恭喜！没有发现任何问题。{Style.RESET_ALL}")
             
             if args.output:
-                with open(args.output, 'w', encoding='utf-8') as f:
-                    f.write(generator.generate_detailed_report(issues))
-                print(f"{Fore.GREEN}报告已保存到: {args.output}{Style.RESET_ALL}")
-        
-        # 保留旧架构作为备用选项
-        if args.old_arch:
-            print(f"{Fore.YELLOW}使用旧架构分析...{Style.RESET_ALL}")
-            reports = detector.analyze_file(args.input)
-            if reports:
-                print(f"\n{Fore.YELLOW}检测完成，共发现 {len(reports)} 个问题{Style.RESET_ALL}")
-                for i, report in enumerate(reports, 1):
-                    print(f"\n{Fore.CYAN}问题 {i}: {report.message}{Style.RESET_ALL}")
-                    print(f"位置: {report.file_path}:{report.line_number}")
-                    print(f"建议: {report.suggestion}")
-            else:
-                print(f"{Fore.GREEN}恭喜！没有发现任何问题。{Style.RESET_ALL}")
-            
-            if args.format == 'json':
-                # JSON格式输出，不显示额外信息
-                print(detector.generate_report(reports, args.format))
-            else:
-                if reports:
-                    print(f"\n{Fore.YELLOW}检测完成，共发现 {len(reports)} 个问题{Style.RESET_ALL}")
-                    print(detector.generate_report(reports, args.format))
-                else:
-                    print(f"{Fore.GREEN}恭喜！没有发现任何问题。{Style.RESET_ALL}")
-                
-                if args.output:
-                    detector.save_report(reports, args.output, args.format)
+                detector.save_report(reports, args.output, args.format)
     
     elif args.input and os.path.isdir(args.input):
         # 目录分析（批量检测模式）

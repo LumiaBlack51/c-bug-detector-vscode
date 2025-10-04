@@ -260,10 +260,7 @@ class CMemorySimulator:
         if isinstance(init_node, FuncCall):
             func_name = self._get_function_name(init_node)
             if func_name in ['malloc', 'calloc', 'realloc']:
-                # 获取malloc节点的实际行号
-                malloc_line = getattr(init_node, 'coord', None)
-                malloc_line = malloc_line.line if malloc_line else line_num
-                self._handle_memory_allocation(var_name, func_name, init_node, malloc_line)
+                self._handle_memory_allocation(var_name, func_name, init_node, line_num)
     
     def _handle_compound(self, node: Compound):
         """处理复合语句（作用域）"""

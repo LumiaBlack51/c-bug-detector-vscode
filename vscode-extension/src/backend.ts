@@ -31,8 +31,22 @@ export class BugDetectorBackend {
         this.pythonPath = this.config.get('pythonPath', 'python');
         
         // 获取插件后端路径
-        const extensionPath = vscode.extensions.getExtension('c-bug-detector.c-bug-detector')?.extensionPath || '';
-        this.backendPath = path.join(extensionPath, '..', 'core', 'main.py');
+        const extension = vscode.extensions.getExtension('c-bug-detector.c-bug-detector');
+        let extensionPath = extension?.extensionPath || '';
+        
+        // 如果无法获取扩展路径，尝试其他方法
+        if (!extensionPath) {
+            // 尝试从当前文件路径推断
+            const currentDir = __dirname;
+            extensionPath = path.join(currentDir, '..', '..');
+        }
+        
+        this.backendPath = path.join(extensionPath, 'core', 'main.py');
+        
+        // 调试信息
+        console.log(`插件路径: ${extensionPath}`);
+        console.log(`后端路径: ${this.backendPath}`);
+        console.log(`后端文件存在: ${fs.existsSync(this.backendPath)}`);
     }
 
     public updateConfiguration(): void {
@@ -136,6 +150,10 @@ export class BugDetectorBackend {
         return new Promise((resolve) => {
             // 检查后端文件是否存在
             if (!fs.existsSync(this.backendPath)) {
+                console.error(`Python后端文件不存在: ${this.backendPath}`);
+                console.error(`插件路径: ${vscode.extensions.getExtension('c-bug-detector.c-bug-detector')?.extensionPath}`);
+                console.error(`当前工作目录: ${process.cwd()}`);
+                
                 resolve({
                     file_path: filePath,
                     reports: [],

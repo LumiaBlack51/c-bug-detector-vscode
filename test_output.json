@@ -1,0 +1,370 @@
+閿欒鍗囩骇: uninitialized_variable -> memory_leak (琛?5, 鍙橀噺)
+閿欒鍗囩骇: uninitialized_variable -> memory_leak (琛?9, 鍙橀噺)
+閿欒鍗囩骇: uninitialized_variable -> memory_leak (琛?61, 鍙橀噺)
+閿欒鍗囩骇: uninitialized_variable -> memory_leak (琛?62, 鍙橀噺)
+閿欒鍗囩骇: memory_leak -> wild_pointer_dereference (琛?5, 鍙橀噺)
+閿欒鍗囩骇: memory_leak -> wild_pointer_dereference (琛?9, 鍙橀噺)
+閿欒鍗囩骇: memory_leak -> wild_pointer_dereference (琛?61, 鍙橀噺)
+閿欒鍗囩骇: memory_leak -> wild_pointer_dereference (琛?62, 鍙橀噺)
+[
+  {
+    "line_number": 50,
+    "error_type": "鍐呭瓨瀹夊叏",
+    "severity": "閿欒",
+    "message": "鍑芥暟鍐呭彉閲?'p2' 鍒嗛厤浜嗗唴瀛樹絾鍦ㄥ嚱鏁扮粨鏉熷墠鏈噴鏀?,
+    "suggestion": "寤鸿鍦ㄥ嚱鏁扮粨鏉熷墠娣诲姞 free(p2); 璇彞",
+    "code_snippet": "p2 = malloc(UnaryOp(op='sizeof',\n        expr=Typename(name=None,\n                      quals=[\n                            ],\n                      align=None,\n                      type=TypeDecl(declname=None,\n                                    quals=[\n                                          ],\n                                    align=None,\n                                    type=Struct(name='Point',\n                                                decls=None\n                                                )\n                                    )\n                      )\n        ))",
+    "module_name": "鍐呭瓨瀹夊叏鍗＋"
+  },
+  {
+    "line_number": 51,
+    "error_type": "鍐呭瓨瀹夊叏",
+    "severity": "閿欒",
+    "message": "鍑芥暟鍐呭彉閲?'node1' 鍒嗛厤浜嗗唴瀛樹絾鍦ㄥ嚱鏁扮粨鏉熷墠鏈噴鏀?,
+    "suggestion": "寤鸿鍦ㄥ嚱鏁扮粨鏉熷墠娣诲姞 free(node1); 璇彞",
+    "code_snippet": "node1 = malloc(UnaryOp(op='sizeof',\n        expr=Typename(name=None,\n                      quals=[\n                            ],\n                      align=None,\n                      type=TypeDecl(declname=None,\n                                    quals=[\n                                          ],\n                                    align=None,\n                                    type=Struct(name='Node',\n                                                decls=None\n                                                )\n                                    )\n                      )\n        ))",
+    "module_name": "鍐呭瓨瀹夊叏鍗＋"
+  },
+  {
+    "line_number": 52,
+    "error_type": "鍐呭瓨瀹夊叏",
+    "severity": "閿欒",
+    "message": "鍑芥暟鍐呭彉閲?'graph1' 鍒嗛厤浜嗗唴瀛樹絾鍦ㄥ嚱鏁扮粨鏉熷墠鏈噴鏀?,
+    "suggestion": "寤鸿鍦ㄥ嚱鏁扮粨鏉熷墠娣诲姞 free(graph1); 璇彞",
+    "code_snippet": "graph1 = malloc(UnaryOp(op='sizeof',\n        expr=Typename(name=None,\n                      quals=[\n                            ],\n                      align=None,\n                      type=TypeDecl(declname=None,\n                                    quals=[\n                                          ],\n                                    align=None,\n                                    type=Struct(name='Graph',\n                                                decls=None\n                                                )\n                                    )\n                      )\n        ))",
+    "module_name": "鍐呭瓨瀹夊叏鍗＋"
+  },
+  {
+    "line_number": 53,
+    "error_type": "鍐呭瓨瀹夊叏",
+    "severity": "閿欒",
+    "message": "鍑芥暟鍐呭彉閲?'p3' 鍒嗛厤浜嗗唴瀛樹絾鍦ㄥ嚱鏁扮粨鏉熷墠鏈噴鏀?,
+    "suggestion": "寤鸿鍦ㄥ嚱鏁扮粨鏉熷墠娣诲姞 free(p3); 璇彞",
+    "code_snippet": "p3 = calloc(1)",
+    "module_name": "鍐呭瓨瀹夊叏鍗＋"
+  },
+  {
+    "line_number": 54,
+    "error_type": "鍐呭瓨瀹夊叏",
+    "severity": "閿欒",
+    "message": "鍑芥暟鍐呭彉閲?'p4' 鍒嗛厤浜嗗唴瀛樹絾鍦ㄥ嚱鏁扮粨鏉熷墠鏈噴鏀?,
+    "suggestion": "寤鸿鍦ㄥ嚱鏁扮粨鏉熷墠娣诲姞 free(p4); 璇彞",
+    "code_snippet": "p4 = calloc(5)",
+    "module_name": "鍐呭瓨瀹夊叏鍗＋"
+  },
+  {
+    "line_number": 49,
+    "error_type": "鍐呭瓨瀹夊叏",
+    "severity": "閿欒",
+    "message": "鍑芥暟鍐呭彉閲?'p1' 鍒嗛厤浜嗗唴瀛樹絾鍦ㄥ嚱鏁扮粨鏉熷墠鏈噴鏀?,
+    "suggestion": "寤鸿鍦ㄥ嚱鏁扮粨鏉熷墠娣诲姞 free(p1); 璇彞",
+    "code_snippet": "p1 = malloc(UnaryOp(op='sizeof',\n        expr=Typename(name=None,\n                      quals=[\n                            ],\n                      align=None,\n                      type=TypeDecl(declname=None,\n                                    quals=[\n                                          ],\n                                    align=None,\n                                    type=Struct(name='Point',\n                                                decls=None\n                                                )\n                                    )\n                      )\n        ))",
+    "module_name": "鍐呭瓨瀹夊叏鍗＋"
+  },
+  {
+    "line_number": 55,
+    "error_type": "鍐呭瓨瀹夊叏",
+    "severity": "閿欒",
+    "message": "鍑芥暟鍐呭彉閲?'p1' 鍒嗛厤浜嗗唴瀛樹絾鍦ㄥ嚱鏁扮粨鏉熷墠鏈噴鏀?,
+    "suggestion": "寤鸿鍦ㄥ嚱鏁扮粨鏉熷墠娣诲姞 free(p1); 璇彞",
+    "code_snippet": "p1 = realloc(p1)",
+    "module_name": "鍐呭瓨瀹夊叏鍗＋"
+  },
+  {
+    "line_number": 83,
+    "error_type": "鍐呭瓨瀹夊叏",
+    "severity": "閿欒",
+    "message": "鍑芥暟鍐呭彉閲?'p' 鍒嗛厤浜嗗唴瀛樹絾鍦ㄥ嚱鏁扮粨鏉熷墠鏈噴鏀?,
+    "suggestion": "寤鸿鍦ㄥ嚱鏁扮粨鏉熷墠娣诲姞 free(p); 璇彞",
+    "code_snippet": "p = malloc(UnaryOp(op='sizeof',\n        expr=Typename(name=None,\n                      quals=[\n                            ],\n                      align=None,\n                      type=TypeDecl(declname=None,\n                                    quals=[\n                                          ],\n                                    align=None,\n                                    type=Struct(name='Point',\n                                                decls=None\n                                                )\n                                    )\n                      )\n        ))",
+    "module_name": "鍐呭瓨瀹夊叏鍗＋"
+  },
+  {
+    "line_number": 119,
+    "error_type": "鍐呭瓨瀹夊叏",
+    "severity": "閿欒",
+    "message": "鍑芥暟鍐呭彉閲?'ptr_array' 鍒嗛厤浜嗗唴瀛樹絾鍦ㄥ嚱鏁扮粨鏉熷墠鏈噴鏀?,
+    "suggestion": "寤鸿鍦ㄥ嚱鏁扮粨鏉熷墠娣诲姞 free(ptr_array); 璇彞",
+    "code_snippet": "ptr_array = malloc(UnaryOp(op='sizeof',\n        expr=Typename(name=None,\n                      quals=[\n                            ],\n                      align=None,\n                      type=TypeDecl(declname=None,\n                                    quals=[\n                                          ],\n                                    align=None,\n                                    type=Struct(name='Point',\n                                                decls=None\n                                                )\n                                    )\n                      )\n        ))",
+    "module_name": "鍐呭瓨瀹夊叏鍗＋"
+  },
+  {
+    "line_number": 126,
+    "error_type": "鍐呭瓨瀹夊叏",
+    "severity": "閿欒",
+    "message": "鍑芥暟鍐呭彉閲?'node_ptr_array' 鍒嗛厤浜嗗唴瀛樹絾鍦ㄥ嚱鏁扮粨鏉熷墠鏈噴鏀?,
+    "suggestion": "寤鸿鍦ㄥ嚱鏁扮粨鏉熷墠娣诲姞 free(node_ptr_array); 璇彞",
+    "code_snippet": "node_ptr_array = malloc(UnaryOp(op='sizeof',\n        expr=Typename(name=None,\n                      quals=[\n                            ],\n                      align=None,\n                      type=TypeDecl(declname=None,\n                                    quals=[\n                                          ],\n                                    align=None,\n                                    type=Struct(name='Node',\n                                                decls=None\n                                                )\n                                    )\n                      )\n        ))",
+    "module_name": "鍐呭瓨瀹夊叏鍗＋"
+  },
+  {
+    "line_number": 89,
+    "error_type": "鍐呭瓨瀹夊叏",
+    "severity": "閿欒",
+    "message": "鍙橀噺 'p1' 閫氳繃malloc鍒嗛厤鍐呭瓨鍚庢湭妫€鏌ヨ繑鍥炲€?,
+    "suggestion": "寤鸿娣诲姞NULL妫€鏌ワ細if (p1 == NULL) { /* 澶勭悊閿欒 */ }",
+    "code_snippet": "struct Point* p1 = malloc(sizeof(struct Point));",
+    "module_name": "鍐呭瓨瀹夊叏鍗＋"
+  },
+  {
+    "line_number": 90,
+    "error_type": "鍐呭瓨瀹夊叏",
+    "severity": "閿欒",
+    "message": "鍙橀噺 'p2' 閫氳繃malloc鍒嗛厤鍐呭瓨鍚庢湭妫€鏌ヨ繑鍥炲€?,
+    "suggestion": "寤鸿娣诲姞NULL妫€鏌ワ細if (p2 == NULL) { /* 澶勭悊閿欒 */ }",
+    "code_snippet": "struct Point* p2 = malloc(sizeof(struct Point));",
+    "module_name": "鍐呭瓨瀹夊叏鍗＋"
+  },
+  {
+    "line_number": 91,
+    "error_type": "鍐呭瓨瀹夊叏",
+    "severity": "閿欒",
+    "message": "鍙橀噺 'node1' 閫氳繃malloc鍒嗛厤鍐呭瓨鍚庢湭妫€鏌ヨ繑鍥炲€?,
+    "suggestion": "寤鸿娣诲姞NULL妫€鏌ワ細if (node1 == NULL) { /* 澶勭悊閿欒 */ }",
+    "code_snippet": "struct Node* node1 = malloc(sizeof(struct Node));",
+    "module_name": "鍐呭瓨瀹夊叏鍗＋"
+  },
+  {
+    "line_number": 92,
+    "error_type": "鍐呭瓨瀹夊叏",
+    "severity": "閿欒",
+    "message": "鍙橀噺 'graph1' 閫氳繃malloc鍒嗛厤鍐呭瓨鍚庢湭妫€鏌ヨ繑鍥炲€?,
+    "suggestion": "寤鸿娣诲姞NULL妫€鏌ワ細if (graph1 == NULL) { /* 澶勭悊閿欒 */ }",
+    "code_snippet": "struct Graph* graph1 = malloc(sizeof(struct Graph));",
+    "module_name": "鍐呭瓨瀹夊叏鍗＋"
+  },
+  {
+    "line_number": 95,
+    "error_type": "鍐呭瓨瀹夊叏",
+    "severity": "閿欒",
+    "message": "鍙橀噺 'p3' 閫氳繃calloc鍒嗛厤鍐呭瓨鍚庢湭妫€鏌ヨ繑鍥炲€?,
+    "suggestion": "寤鸿娣诲姞NULL妫€鏌ワ細if (p3 == NULL) { /* 澶勭悊閿欒 */ }",
+    "code_snippet": "struct Point* p3 = calloc(1, sizeof(struct Point));",
+    "module_name": "鍐呭瓨瀹夊叏鍗＋"
+  },
+  {
+    "line_number": 96,
+    "error_type": "鍐呭瓨瀹夊叏",
+    "severity": "閿欒",
+    "message": "鍙橀噺 'p4' 閫氳繃calloc鍒嗛厤鍐呭瓨鍚庢湭妫€鏌ヨ繑鍥炲€?,
+    "suggestion": "寤鸿娣诲姞NULL妫€鏌ワ細if (p4 == NULL) { /* 澶勭悊閿欒 */ }",
+    "code_snippet": "struct Point* p4 = calloc(5, sizeof(struct Point));",
+    "module_name": "鍐呭瓨瀹夊叏鍗＋"
+  },
+  {
+    "line_number": 142,
+    "error_type": "鍐呭瓨瀹夊叏",
+    "severity": "閿欒",
+    "message": "鍙橀噺 'p' 閫氳繃malloc鍒嗛厤鍐呭瓨鍚庢湭妫€鏌ヨ繑鍥炲€?,
+    "suggestion": "寤鸿娣诲姞NULL妫€鏌ワ細if (p == NULL) { /* 澶勭悊閿欒 */ }",
+    "code_snippet": "struct Point* p = malloc(sizeof(struct Point));",
+    "module_name": "鍐呭瓨瀹夊叏鍗＋"
+  },
+  {
+    "line_number": 75,
+    "error_type": "鍐呭瓨瀹夊叏",
+    "severity": "閿欒",
+    "message": "閲庢寚閽堥棶棰橈細鏈垵濮嬪寲鎸囬拡 'node_ptr' 鍦ㄥ澶勮浣跨敤",
+    "suggestion": "寤鸿鍦ㄤ娇鐢ㄥ墠鍒濆鍖栨寚閽堬細node_ptr = malloc(sizeof(struct Node)); 鎴?node_ptr = NULL;",
+    "code_snippet": "node_ptr->data = 43;",
+    "module_name": "鍐呭瓨瀹夊叏鍗＋"
+  },
+  {
+    "line_number": 79,
+    "error_type": "鍐呭瓨瀹夊叏",
+    "severity": "閿欒",
+    "message": "閲庢寚閽堥棶棰橈細鏈垵濮嬪寲鎸囬拡 'graph_ptr' 鍦ㄥ澶勮浣跨敤",
+    "suggestion": "寤鸿鍦ㄤ娇鐢ㄥ墠鍒濆鍖栨寚閽堬細graph_ptr = malloc(sizeof(struct Graph)); 鎴?graph_ptr = NULL;",
+    "code_snippet": "graph_ptr->vertices = 6;",
+    "module_name": "鍐呭瓨瀹夊叏鍗＋"
+  },
+  {
+    "line_number": 261,
+    "error_type": "鍐呭瓨瀹夊叏",
+    "severity": "閿欒",
+    "message": "閲庢寚閽堥棶棰橈細鏈垵濮嬪寲鎸囬拡 'person_ptr' 鍦ㄥ澶勮浣跨敤",
+    "suggestion": "寤鸿鍦ㄤ娇鐢ㄥ墠鍒濆鍖栨寚閽堬細person_ptr = malloc(sizeof(struct Person)); 鎴?person_ptr = NULL;",
+    "code_snippet": "person_ptr->age = 30;",
+    "module_name": "鍐呭瓨瀹夊叏鍗＋"
+  },
+  {
+    "line_number": 262,
+    "error_type": "鍐呭瓨瀹夊叏",
+    "severity": "閿欒",
+    "message": "閲庢寚閽堥棶棰橈細鏈垵濮嬪寲鎸囬拡 'addr_ptr' 鍦ㄥ澶勮浣跨敤",
+    "suggestion": "寤鸿鍦ㄤ娇鐢ㄥ墠鍒濆鍖栨寚閽堬細addr_ptr = malloc(sizeof(struct Address)); 鎴?addr_ptr = NULL;",
+    "code_snippet": "addr_ptr->zip = 54321;",
+    "module_name": "鍐呭瓨瀹夊叏鍗＋"
+  },
+  {
+    "line_number": 199,
+    "error_type": "鍐呭瓨瀹夊叏",
+    "severity": "閿欒",
+    "message": "鏁扮粍 'ptr_array' 鍦ㄥ惊鐜腑鍒嗛厤鐨勫唴瀛樻湭琚噴鏀撅紝瀵艰嚧寰幆鍐呭瓨娉勬紡",
+    "suggestion": "寤鸿娣诲姞閲婃斁寰幆锛歠or (int i = 0; i < size; i++) { free(ptr_array[i]); }",
+    "code_snippet": "for (int i = 0; i < 5; i++) {",
+    "module_name": "鍐呭瓨瀹夊叏鍗＋"
+  },
+  {
+    "line_number": 207,
+    "error_type": "鍐呭瓨瀹夊叏",
+    "severity": "閿欒",
+    "message": "鏁扮粍 'node_ptr_array' 鍦ㄥ惊鐜腑鍒嗛厤鐨勫唴瀛樻湭琚噴鏀撅紝瀵艰嚧寰幆鍐呭瓨娉勬紡",
+    "suggestion": "寤鸿娣诲姞閲婃斁寰幆锛歠or (int i = 0; i < size; i++) { free(node_ptr_array[i]); }",
+    "code_snippet": "for (int i = 0; i < 3; i++) {",
+    "module_name": "鍐呭瓨瀹夊叏鍗＋"
+  },
+  {
+    "line_number": 33,
+    "error_type": "鍙橀噺鐘舵€?,
+    "severity": "閿欒",
+    "message": "鏈娇鐢ㄥ彉閲忚鍛? unused variable 'point2'",
+    "suggestion": "寤鸿鍒犻櫎鏈娇鐢ㄧ殑鍙橀噺鎴栨坊鍔犱娇鐢?,
+    "code_snippet": "浣嶇疆: ../test_struct_pointers.c:33:18",
+    "module_name": "鍙橀噺鐘舵€佺洃瀵熷畼"
+  },
+  {
+    "line_number": 57,
+    "error_type": "鍙橀噺鐘舵€?,
+    "severity": "閿欒",
+    "message": "鏈垵濮嬪寲鍙橀噺璀﹀憡: variable 'p1' is uninitialized when used here",
+    "suggestion": "寤鸿鍦ㄤ娇鐢ㄥ墠鍒濆鍖栧彉閲?,
+    "code_snippet": "浣嶇疆: ../test_struct_pointers.c:57:5",
+    "module_name": "鍙橀噺鐘舵€佺洃瀵熷畼"
+  },
+  {
+    "line_number": 58,
+    "error_type": "鍙橀噺鐘舵€?,
+    "severity": "閿欒",
+    "message": "鏈垵濮嬪寲鍙橀噺璀﹀憡: variable 'p2' is uninitialized when used here",
+    "suggestion": "寤鸿鍦ㄤ娇鐢ㄥ墠鍒濆鍖栧彉閲?,
+    "code_snippet": "浣嶇疆: ../test_struct_pointers.c:58:5",
+    "module_name": "鍙橀噺鐘舵€佺洃瀵熷畼"
+  },
+  {
+    "line_number": 59,
+    "error_type": "鍙橀噺鐘舵€?,
+    "severity": "閿欒",
+    "message": "鏈垵濮嬪寲鍙橀噺璀﹀憡: variable 'p3' is uninitialized when used here",
+    "suggestion": "寤鸿鍦ㄤ娇鐢ㄥ墠鍒濆鍖栧彉閲?,
+    "code_snippet": "浣嶇疆: ../test_struct_pointers.c:59:5",
+    "module_name": "鍙橀噺鐘舵€佺洃瀵熷畼"
+  },
+  {
+    "line_number": 60,
+    "error_type": "鍙橀噺鐘舵€?,
+    "severity": "閿欒",
+    "message": "鏈垵濮嬪寲鍙橀噺璀﹀憡: variable 'p4' is uninitialized when used here",
+    "suggestion": "寤鸿鍦ㄤ娇鐢ㄥ墠鍒濆鍖栧彉閲?,
+    "code_snippet": "浣嶇疆: ../test_struct_pointers.c:60:5",
+    "module_name": "鍙橀噺鐘舵€佺洃瀵熷畼"
+  },
+  {
+    "line_number": 75,
+    "error_type": "鍙橀噺鐘舵€?,
+    "severity": "閿欒",
+    "message": "鏈垵濮嬪寲鍙橀噺璀﹀憡: variable 'node_ptr' is uninitialized when used here",
+    "suggestion": "寤鸿鍦ㄤ娇鐢ㄥ墠鍒濆鍖栧彉閲?,
+    "code_snippet": "浣嶇疆: ../test_struct_pointers.c:75:5",
+    "module_name": "鍙橀噺鐘舵€佺洃瀵熷畼"
+  },
+  {
+    "line_number": 79,
+    "error_type": "鍙橀噺鐘舵€?,
+    "severity": "閿欒",
+    "message": "鏈垵濮嬪寲鍙橀噺璀﹀憡: variable 'graph_ptr' is uninitialized when used here",
+    "suggestion": "寤鸿鍦ㄤ娇鐢ㄥ墠鍒濆鍖栧彉閲?,
+    "code_snippet": "浣嶇疆: ../test_struct_pointers.c:79:5",
+    "module_name": "鍙橀噺鐘舵€佺洃瀵熷畼"
+  },
+  {
+    "line_number": 83,
+    "error_type": "鍙橀噺鐘舵€?,
+    "severity": "閿欒",
+    "message": "鏈垵濮嬪寲鍙橀噺璀﹀憡: variable 'student_ptr' is uninitialized when used here",
+    "suggestion": "寤鸿鍦ㄤ娇鐢ㄥ墠鍒濆鍖栧彉閲?,
+    "code_snippet": "浣嶇疆: ../test_struct_pointers.c:83:5",
+    "module_name": "鍙橀噺鐘舵€佺洃瀵熷畼"
+  },
+  {
+    "line_number": 167,
+    "error_type": "鍙橀噺鐘舵€?,
+    "severity": "閿欒",
+    "message": "鏈垵濮嬪寲鍙橀噺璀﹀憡: variable 'p3' is uninitialized when used here",
+    "suggestion": "寤鸿鍦ㄤ娇鐢ㄥ墠鍒濆鍖栧彉閲?,
+    "code_snippet": "浣嶇疆: ../test_struct_pointers.c:167:15",
+    "module_name": "鍙橀噺鐘舵€佺洃瀵熷畼"
+  },
+  {
+    "line_number": 251,
+    "error_type": "鍙橀噺鐘舵€?,
+    "severity": "閿欒",
+    "message": "鏈娇鐢ㄥ彉閲忚鍛? unused variable 'addr1'",
+    "suggestion": "寤鸿鍒犻櫎鏈娇鐢ㄧ殑鍙橀噺鎴栨坊鍔犱娇鐢?,
+    "code_snippet": "浣嶇疆: ../test_struct_pointers.c:251:20",
+    "module_name": "鍙橀噺鐘舵€佺洃瀵熷畼"
+  },
+  {
+    "line_number": 261,
+    "error_type": "鍙橀噺鐘舵€?,
+    "severity": "閿欒",
+    "message": "鏈垵濮嬪寲鍙橀噺璀﹀憡: variable 'person_ptr' is uninitialized when used here",
+    "suggestion": "寤鸿鍦ㄤ娇鐢ㄥ墠鍒濆鍖栧彉閲?,
+    "code_snippet": "浣嶇疆: ../test_struct_pointers.c:261:5",
+    "module_name": "鍙橀噺鐘舵€佺洃瀵熷畼"
+  },
+  {
+    "line_number": 262,
+    "error_type": "鍙橀噺鐘舵€?,
+    "severity": "閿欒",
+    "message": "鏈垵濮嬪寲鍙橀噺璀﹀憡: variable 'addr_ptr' is uninitialized when used here",
+    "suggestion": "寤鸿鍦ㄤ娇鐢ㄥ墠鍒濆鍖栧彉閲?,
+    "code_snippet": "浣嶇疆: ../test_struct_pointers.c:262:5",
+    "module_name": "鍙橀噺鐘舵€佺洃瀵熷畼"
+  },
+  {
+    "line_number": 63,
+    "error_type": "鍙橀噺鐘舵€?,
+    "severity": "閿欒",
+    "message": "浣跨敤鏈垵濮嬪寲鐨勫彉閲?'point1' (绫诲瀷: struct Point)",
+    "suggestion": "寤鸿鍦ㄤ娇鐢ㄥ墠鍒濆鍖栧彉閲? point1 = 0;",
+    "code_snippet": "浣嶇疆: ../test_struct_pointers.c:63:5",
+    "module_name": "鍙橀噺鐘舵€佺洃瀵熷畼"
+  },
+  {
+    "line_number": 74,
+    "error_type": "鍙橀噺鐘舵€?,
+    "severity": "閿欒",
+    "message": "浣跨敤鏈垵濮嬪寲鐨勫彉閲?'node1' (绫诲瀷: struct Node *)",
+    "suggestion": "寤鸿鍦ㄤ娇鐢ㄥ墠鍒濆鍖栧彉閲? node1 = 0;",
+    "code_snippet": "浣嶇疆: ../test_struct_pointers.c:74:5",
+    "module_name": "鍙橀噺鐘舵€佺洃瀵熷畼"
+  },
+  {
+    "line_number": 78,
+    "error_type": "鍙橀噺鐘舵€?,
+    "severity": "閿欒",
+    "message": "浣跨敤鏈垵濮嬪寲鐨勫彉閲?'graph1' (绫诲瀷: struct Graph *)",
+    "suggestion": "寤鸿鍦ㄤ娇鐢ㄥ墠鍒濆鍖栧彉閲? graph1 = 0;",
+    "code_snippet": "浣嶇疆: ../test_struct_pointers.c:78:5",
+    "module_name": "鍙橀噺鐘舵€佺洃瀵熷畼"
+  },
+  {
+    "line_number": 82,
+    "error_type": "鍙橀噺鐘舵€?,
+    "severity": "閿欒",
+    "message": "浣跨敤鏈垵濮嬪寲鐨勫彉閲?'student1' (绫诲瀷: Student)",
+    "suggestion": "寤鸿鍦ㄤ娇鐢ㄥ墠鍒濆鍖栧彉閲? student1 = 0;",
+    "code_snippet": "浣嶇疆: ../test_struct_pointers.c:82:5",
+    "module_name": "鍙橀噺鐘舵€佺洃瀵熷畼"
+  },
+  {
+    "line_number": 255,
+    "error_type": "鍙橀噺鐘舵€?,
+    "severity": "閿欒",
+    "message": "浣跨敤鏈垵濮嬪寲鐨勫彉閲?'person1' (绫诲瀷: struct Person)",
+    "suggestion": "寤鸿鍦ㄤ娇鐢ㄥ墠鍒濆鍖栧彉閲? person1 = 0;",
+    "code_snippet": "浣嶇疆: ../test_struct_pointers.c:255:5",
+    "module_name": "鍙橀噺鐘舵€佺洃瀵熷畼"
+  }
+]

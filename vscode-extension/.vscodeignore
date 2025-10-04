@@ -1,0 +1,19 @@
+# 排除不必要的文件
+.gitignore
+tsconfig.json
+src/
+node_modules/
+*.vsix
+.vscode/
+*.log
+test_*.c
+tests/
+docs/
+tools/
+README.md
+安装说明.md
+core/README.md
+core/requirements.txt
+core/modules/__pycache__/
+core/utils/__pycache__/
+core/__pycache__/

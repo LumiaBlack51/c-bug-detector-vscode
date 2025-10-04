@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import { BugDetectorBackend } from './backend';
 import { ResultsProvider } from './resultsProvider';
 import { DetectionPanel } from './detectionPanel';
+import { ModuleControlProvider } from './moduleControlProvider';
 
 export function activate(context: vscode.ExtensionContext) {
     console.log('C Bug Detector extension is now active!');
@@ -9,6 +10,7 @@ export function activate(context: vscode.ExtensionContext) {
     // 初始化后端
     const backend = new BugDetectorBackend();
     const resultsProvider = new ResultsProvider();
+    const moduleControlProvider = new ModuleControlProvider();
     const detectionPanel = new DetectionPanel(context, backend, resultsProvider);
 
     // 注册命令
@@ -61,10 +63,44 @@ export function activate(context: vscode.ExtensionContext) {
         vscode.window.showInformationMessage('检测结果已清除');
     });
 
+    // 模块切换命令
+    const toggleMemorySafetyCommand = vscode.commands.registerCommand('c-bug-detector.toggleMemorySafety', () => {
+        const config = vscode.workspace.getConfiguration('c-bug-detector');
+        const currentValue = config.get('enableMemorySafety', true);
+        config.update('enableMemorySafety', !currentValue, vscode.ConfigurationTarget.Global);
+        vscode.window.showInformationMessage(`内存安全卫士模块已${!currentValue ? '启用' : '禁用'}`);
+    });
+
+    const toggleVariableStateCommand = vscode.commands.registerCommand('c-bug-detector.toggleVariableState', () => {
+        const config = vscode.workspace.getConfiguration('c-bug-detector');
+        const currentValue = config.get('enableVariableState', true);
+        config.update('enableVariableState', !currentValue, vscode.ConfigurationTarget.Global);
+        vscode.window.showInformationMessage(`变量状态监察官模块已${!currentValue ? '启用' : '禁用'}`);
+    });
+
+    const toggleStandardLibraryCommand = vscode.commands.registerCommand('c-bug-detector.toggleStandardLibrary', () => {
+        const config = vscode.workspace.getConfiguration('c-bug-detector');
+        const currentValue = config.get('enableStandardLibrary', true);
+        config.update('enableStandardLibrary', !currentValue, vscode.ConfigurationTarget.Global);
+        vscode.window.showInformationMessage(`标准库使用助手模块已${!currentValue ? '启用' : '禁用'}`);
+    });
+
+    const toggleNumericControlFlowCommand = vscode.commands.registerCommand('c-bug-detector.toggleNumericControlFlow', () => {
+        const config = vscode.workspace.getConfiguration('c-bug-detector');
+        const currentValue = config.get('enableNumericControlFlow', true);
+        config.update('enableNumericControlFlow', !currentValue, vscode.ConfigurationTarget.Global);
+        vscode.window.showInformationMessage(`数值与控制流分析器模块已${!currentValue ? '启用' : '禁用'}`);
+    });
+
     // 注册视图
     const resultsTreeView = vscode.window.createTreeView('c-bug-detector-results', {
         treeDataProvider: resultsProvider,
         showCollapseAll: true
+    });
+
+    const moduleControlTreeView = vscode.window.createTreeView('c-bug-detector-controls', {
+        treeDataProvider: moduleControlProvider,
+        showCollapseAll: false
     });
 
     // 注册诊断集合
@@ -94,12 +130,18 @@ export function activate(context: vscode.ExtensionContext) {
         analyzeAllCFilesCommand,
         showPanelCommand,
         clearResultsCommand,
+        toggleMemorySafetyCommand,
+        toggleVariableStateCommand,
+        toggleStandardLibraryCommand,
+        toggleNumericControlFlowCommand,
         resultsTreeView,
+        moduleControlTreeView,
         diagnosticCollection,
         configChangeListener,
         saveListener,
         backend,
         resultsProvider,
+        moduleControlProvider,
         detectionPanel
     );
 

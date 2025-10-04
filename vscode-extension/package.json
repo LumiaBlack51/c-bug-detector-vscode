@@ -2,7 +2,7 @@
   "name": "c-bug-detector",
   "displayName": "C语言Bug检测器",
   "description": "专为初学者设计的C语言bug检测器，采用启发式与正则表达式方法",
-  "version": "2.0.0-alpha",
+  "version": "2.1.0",
   "publisher": "c-bug-detector",
   "repository": {
     "type": "git",
@@ -53,6 +53,26 @@
         "command": "c-bug-detector.clearResults",
         "title": "清除检测结果",
         "category": "C Bug Detector"
+      },
+      {
+        "command": "c-bug-detector.toggleMemorySafety",
+        "title": "切换内存安全卫士",
+        "category": "C Bug Detector"
+      },
+      {
+        "command": "c-bug-detector.toggleVariableState",
+        "title": "切换变量状态监察官",
+        "category": "C Bug Detector"
+      },
+      {
+        "command": "c-bug-detector.toggleStandardLibrary",
+        "title": "切换标准库使用助手",
+        "category": "C Bug Detector"
+      },
+      {
+        "command": "c-bug-detector.toggleNumericControlFlow",
+        "title": "切换数值与控制流分析器",
+        "category": "C Bug Detector"
       }
     ],
     "keybindings": [
@@ -99,6 +119,11 @@
           "id": "c-bug-detector-results",
           "name": "检测结果",
           "when": "c-bug-detector.hasResults"
+        },
+        {
+          "id": "c-bug-detector-controls",
+          "name": "模块控制",
+          "when": "true"
         }
       ]
     },
