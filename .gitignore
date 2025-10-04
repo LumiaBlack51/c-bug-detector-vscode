@@ -80,3 +80,12 @@ logs/
 # Temporary files
 *.tmp
 *.temp
+
+# Test files and results (keep examples but ignore test results)
+test_example*.c
+test_result_*.txt
+test_summary*.txt
+test_analysis_report.txt
+ANALYSIS_REPORT.md
+RESTORATION_AND_IMPROVEMENT_SUMMARY.md
+FINAL_TEST_ANALYSIS_AND_OPTIMIZATION_PLAN.md
