@@ -75,23 +75,23 @@ class CBugDetector:
         }
     
     def analyze_file_new(self, file_path: str) -> List[Issue]:
-        """分析单个C文件 - 使用新架构"""
-        print(f"{Fore.CYAN}正在分析文件: {file_path}{Style.RESET_ALL}")
+        """Analyze a single C file - using new architecture"""
+        print(f"{Fore.CYAN}Analyzing file: {file_path}{Style.RESET_ALL}")
         
-        # 检查文件是否存在
+        # Check if file exists
         if not os.path.exists(file_path):
-            print(f"{Fore.RED}错误: 文件 {file_path} 不存在{Style.RESET_ALL}")
+            print(f"{Fore.RED}Error: File {file_path} does not exist{Style.RESET_ALL}")
             return []
         
-        # 检查文件扩展名
+        # Check file extension
         if not file_path.endswith('.c'):
-            print(f"{Fore.YELLOW}警告: 文件 {file_path} 不是C文件(.c){Style.RESET_ALL}")
+            print(f"{Fore.YELLOW}Warning: File {file_path} is not a C file (.c){Style.RESET_ALL}")
         
         try:
-            # 解析C代码
+            # Parse C code
             parsed_data = self.parser.parse_file(file_path)
             if not parsed_data:
-                print(f"{Fore.RED}错误: 无法解析文件 {file_path}{Style.RESET_ALL}")
+                print(f"{Fore.RED}Error: Cannot parse file {file_path}{Style.RESET_ALL}")
                 return []
             
             # 清空之前的报告
@@ -158,23 +158,23 @@ class CBugDetector:
             return []
     
     def analyze_file(self, file_path: str) -> List[BugReport]:
-        """分析单个C文件"""
-        print(f"{Fore.CYAN}正在分析文件: {file_path}{Style.RESET_ALL}")
+        """Analyze a single C file"""
+        print(f"{Fore.CYAN}Analyzing file: {file_path}{Style.RESET_ALL}")
         
-        # 检查文件是否存在
+        # Check if file exists
         if not os.path.exists(file_path):
-            print(f"{Fore.RED}错误: 文件 {file_path} 不存在{Style.RESET_ALL}")
+            print(f"{Fore.RED}Error: File {file_path} does not exist{Style.RESET_ALL}")
             return []
         
-        # 检查文件扩展名
+        # Check file extension
         if not file_path.endswith('.c'):
-            print(f"{Fore.YELLOW}警告: 文件 {file_path} 不是C文件(.c){Style.RESET_ALL}")
+            print(f"{Fore.YELLOW}Warning: File {file_path} is not a C file (.c){Style.RESET_ALL}")
         
         try:
-            # 解析C代码
+            # Parse C code
             parsed_data = self.parser.parse_file(file_path)
             if not parsed_data:
-                print(f"{Fore.RED}错误: 无法解析文件 {file_path}{Style.RESET_ALL}")
+                print(f"{Fore.RED}Error: Cannot parse file {file_path}{Style.RESET_ALL}")
                 return []
             
             # 清空之前的报告
@@ -198,17 +198,17 @@ class CBugDetector:
                     except Exception as e:
                         print(f"{Fore.RED}模块 {module_name} 运行出错: {e}{Style.RESET_ALL}")
             
-            # 去重处理
+            # Deduplication processing
             deduplicated_reports = self._deduplicate_reports(all_reports)
             
-            # 添加到错误报告器
+            # Add to error reporter
             for report in deduplicated_reports:
                 self.error_reporter.add_report(report)
             
             return deduplicated_reports
             
         except Exception as e:
-            print(f"{Fore.RED}分析文件时出错: {e}{Style.RESET_ALL}")
+            print(f"{Fore.RED}Error analyzing file: {e}{Style.RESET_ALL}")
             return []
     
     def analyze_file_quiet(self, file_path: str) -> List[BugReport]:
@@ -326,11 +326,11 @@ class CBugDetector:
         return False
     
     def analyze_directory(self, directory_path: str) -> Dict[str, List[BugReport]]:
-        """分析目录中的所有C文件"""
-        print(f"{Fore.CYAN}正在分析目录: {directory_path}{Style.RESET_ALL}")
+        """Analyze all C files in a directory"""
+        print(f"{Fore.CYAN}Analyzing directory: {directory_path}{Style.RESET_ALL}")
         
         if not os.path.exists(directory_path):
-            print(f"{Fore.RED}错误: 目录 {directory_path} 不存在{Style.RESET_ALL}")
+            print(f"{Fore.RED}Error: Directory {directory_path} does not exist{Style.RESET_ALL}")
             return {}
         
         results = {}
@@ -437,7 +437,7 @@ def main():
     
     # 检查输入路径
     if args.input and not os.path.exists(args.input):
-        print(f"{Fore.RED}错误: 路径 {args.input} 不存在{Style.RESET_ALL}")
+        print(f"{Fore.RED}Error: Path {args.input} does not exist{Style.RESET_ALL}")
         return
     
     # 分析文件或目录
@@ -457,7 +457,7 @@ def main():
         else:
             # 文本格式输出
             if issues:
-                print(f"\n{Fore.YELLOW}检测完成，共发现 {len(issues)} 个问题{Style.RESET_ALL}")
+                print(f"\n{Fore.YELLOW}Detection completed, found {len(issues)} issue(s){Style.RESET_ALL}")
                 print(generator.generate_detailed_report(issues))
                 print("\n" + generator.generate_summary(issues))
             else:
@@ -486,10 +486,10 @@ def main():
                 print(detector.generate_report(reports, args.format))
             else:
                 if reports:
-                    print(f"\n{Fore.YELLOW}检测完成，共发现 {len(reports)} 个问题{Style.RESET_ALL}")
+                    print(f"\n{Fore.YELLOW}Detection completed, found {len(reports)} issue(s){Style.RESET_ALL}")
                     print(detector.generate_report(reports, args.format))
                 else:
-                    print(f"{Fore.GREEN}恭喜！没有发现任何问题。{Style.RESET_ALL}")
+                    print(f"{Fore.GREEN}Congratulations! No issues found.{Style.RESET_ALL}")
                 
                 if args.output:
                     detector.save_report(reports, args.output, args.format)
@@ -501,7 +501,7 @@ def main():
         
         if results:
             total_issues = sum(len(reports) for reports in results.values())
-            print(f"\n{Fore.GREEN}批量检测完成！{Style.RESET_ALL}")
+            print(f"\n{Fore.GREEN}Batch detection completed!{Style.RESET_ALL}")
             print(f"{Fore.CYAN}统计结果:{Style.RESET_ALL}")
             print(f"   - 检测文件数: {len(results)}")
             print(f"   - 发现问题数: {total_issues}")
